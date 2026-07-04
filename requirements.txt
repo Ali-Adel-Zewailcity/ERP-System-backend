@@ -1,0 +1,16 @@
+fastapi[standard]
+uvicorn[standard]
+pydantic
+pydantic-settings
+sqlalchemy
+databases
+aiosqlite
+asyncpg
+psycopg2-binary
+alembic
+python-jose[cryptography]
+python-multipart
+python-dotenv
+PyJWT
+pwdlib
+pwdlib[argon2]
