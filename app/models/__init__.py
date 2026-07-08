@@ -7,3 +7,12 @@ Sub-modules will be added here as each API feature is implemented:
   schemas/sales.py
   schemas/hr.py
 """
+
+from app.models.hr import (
+    EmployeeCreate,
+    EmployeeUpdate,
+    EmployeeResponse,
+    EmployeeListResponse,
+    AttachmentResponse,
+    ActivityLogResponse,
+)

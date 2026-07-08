@@ -89,7 +89,7 @@ users = sa.Table(
 activity_logs = sa.Table(
     "activity_logs",
     metadata,
-    sa.Column("id",          sa.BigInteger,  primary_key=True, autoincrement=True),
+    sa.Column("id",          sa.Integer,  primary_key=True, autoincrement=True),
     sa.Column("org_id",      sa.Integer,     sa.ForeignKey("organizations.id", ondelete="CASCADE"),
               nullable=False, index=True),
     sa.Column("user_id",     sa.Integer,     sa.ForeignKey("users.id", ondelete="SET NULL"),

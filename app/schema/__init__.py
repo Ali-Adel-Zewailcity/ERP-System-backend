@@ -24,6 +24,7 @@ from app.schema.sales import (
 from app.schema.hr import (
     departments,
     employees,
+    employee_attachments,
     attendance,
     leave_requests,
     payroll,
@@ -51,6 +52,7 @@ __all__ = [
     # HR
     "departments",
     "employees",
+    "employee_attachments",
     "attendance",
     "leave_requests",
     "payroll",

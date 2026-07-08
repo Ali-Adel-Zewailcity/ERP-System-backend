@@ -4,7 +4,7 @@ HR Module - SQLAlchemy Core table definitions.
 Tables
 ------
   departments    - organisational units; each has an optional manager
-  employees      - employee master data (links to a user account)
+  employees      - employee master data
   attendance     - daily check-in / check-out records
   leave_requests - employee leave applications with manager approval
   payroll        - monthly payslip records generated automatically
@@ -15,6 +15,32 @@ from __future__ import annotations
 import sqlalchemy as sa
 
 from app.db.metadata import metadata
+
+# ─────────────────────────────────────────────────────────────────────────────
+# employee_attachments
+# ─────────────────────────────────────────────────────────────────────────────
+_ATTACHMENT_TYPES = "('cv','contract','national_id','passport','other')"
+
+employee_attachments = sa.Table(
+    "employee_attachments",
+    metadata,
+    sa.Column("id",             sa.Integer,      primary_key=True, autoincrement=True),
+    sa.Column("employee_id",    sa.Integer,      sa.ForeignKey("employees.id", ondelete="CASCADE"),
+              nullable=False, index=True),
+    sa.Column("file_type",      sa.String(20),   nullable=False),
+    sa.Column("file_name",      sa.String(255),  nullable=False),
+    sa.Column("file_path",      sa.String(500),  nullable=False),
+    sa.Column("content_type",   sa.String(100),  nullable=True),
+    sa.Column("file_size",      sa.Integer,      nullable=True),
+    sa.Column("uploaded_by",    sa.Integer,      sa.ForeignKey("users.id", ondelete="SET NULL"),
+              nullable=True),
+    sa.Column("created_at",     sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.CheckConstraint(
+        f"file_type IN {_ATTACHMENT_TYPES}",
+        name="ck_employee_attachments_valid_type",
+    ),
+)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # departments
@@ -39,35 +65,33 @@ departments = sa.Table(
 # ─────────────────────────────────────────────────────────────────────────────
 # employees
 # ─────────────────────────────────────────────────────────────────────────────
+_EMPLOYEE_STATUSES = "('active','resigned')"
+
 employees = sa.Table(
     "employees",
     metadata,
-    sa.Column("id",             sa.Integer,        primary_key=True, autoincrement=True),
-    sa.Column("org_id",         sa.Integer,        sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+    sa.Column("id",               sa.Integer,        primary_key=True, autoincrement=True),
+    sa.Column("org_id",           sa.Integer,        sa.ForeignKey("organizations.id", ondelete="CASCADE"),
               nullable=False, index=True),
-    # An employee may or may not have a system user account.
-    sa.Column("user_id",        sa.Integer,        sa.ForeignKey("users.id", ondelete="SET NULL"),
-              nullable=True, unique=True),
-    sa.Column("department_id",  sa.Integer,        sa.ForeignKey("departments.id", ondelete="SET NULL"),
-              nullable=True, index=True),
-    # Direct superior/manager of this employee (enables hierarchical organizational charts and tree tracking)
-    sa.Column("superior_id",    sa.Integer,        sa.ForeignKey("employees.id", ondelete="SET NULL"),
-              nullable=True, index=True),
-    sa.Column("first_name",     sa.String(80),     nullable=False),
-    sa.Column("last_name",      sa.String(80),     nullable=False),
-    sa.Column("job_title",      sa.String(120),    nullable=True),
-    sa.Column("hire_date",      sa.Date,           nullable=False),
-    sa.Column("base_salary",    sa.Numeric(12, 2), nullable=False),
-    sa.Column("phone",          sa.String(20),     nullable=True),
-    sa.Column("national_id",    sa.String(30),     nullable=True),
-    # JSON array of document URLs (contracts, certificates …)
-    sa.Column("documents",      sa.Text,           nullable=True),
-    sa.Column("is_active",      sa.Boolean,        nullable=False, server_default=sa.text("1")),
-    sa.Column("created_at",     sa.DateTime(timezone=True), nullable=False,
+    sa.Column("full_name",        sa.String(160),    nullable=False),
+    sa.Column("employee_number",  sa.String(30),     nullable=False, unique=True),
+    sa.Column("email",            sa.String(255),    nullable=False, unique=True),
+    sa.Column("phone_number",     sa.String(20),     nullable=True),
+    sa.Column("job_title",        sa.String(120),    nullable=True),
+    sa.Column("department",       sa.String(100),    nullable=True),
+    sa.Column("salary",           sa.Numeric(12, 2), nullable=False),
+    sa.Column("hire_date",        sa.Date,           nullable=False),
+    sa.Column("profile_photo_path", sa.String(500), nullable=True),
+    sa.Column("status",           sa.String(10),     nullable=False, server_default=sa.text("'active'")),
+    sa.Column("created_at",       sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
-    sa.Column("updated_at",     sa.DateTime(timezone=True), nullable=False,
+    sa.Column("updated_at",       sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now(), onupdate=sa.func.now()),
-    sa.CheckConstraint("base_salary >= 0", name="ck_employees_base_salary_non_negative"),
+    sa.CheckConstraint(
+        f"status IN {_EMPLOYEE_STATUSES}",
+        name="ck_employees_valid_status",
+    ),
+    sa.CheckConstraint("salary >= 0", name="ck_employees_salary_non_negative"),
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
