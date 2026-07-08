@@ -270,21 +270,27 @@ async def import_employees(
     imported = 0
     for row in valid_rows:
         try:
+            from datetime import date as _date_cls
+            hire_date_raw = row["hire_date"]
+            hire_date = _date_cls.fromisoformat(hire_date_raw) if isinstance(hire_date_raw, str) else hire_date_raw
+
             await create_employee(
                 org_id=current_user.org_id,
                 full_name=row["full_name"],
                 employee_number=row["employee_number"],
                 email=row["email"],
                 salary=row["salary"],
-                hire_date=row["hire_date"],
+                hire_date=hire_date,
                 phone_number=row.get("phone_number"),
                 job_title=row.get("job_title"),
                 department=row.get("department"),
                 status=row.get("status", "active"),
             )
             imported += 1
-        except Exception:
-            errors.append({"row": 0, "reasons": f"Failed to import: {row.get('full_name', 'unknown')}"})
+        except Exception as exc:
+            name = row.get("full_name", "unknown")
+            reason = str(exc) if str(exc) else "Unknown error"
+            errors.append({"row": 0, "reasons": f"Failed to import '{name}': {reason}"})
 
     return ImportSummary(
         total=len(rows),
@@ -345,7 +351,7 @@ async def export_employees(
             sort_order=sort_order or "asc",
         )
 
-    content = generate_export(rows, format)
+    content = generate_export([dict(r) for r in rows], format)
 
     if format == "csv":
         media_type = "text/csv"

@@ -297,6 +297,8 @@ def generate_export(
 
     rows = []
     for emp in employees:
+        if not isinstance(emp, dict):
+            emp = dict(emp)
         row = {}
         for h in headers:
             val = emp.get(h)
