@@ -50,11 +50,13 @@ async def create_attendance(
 async def get_attendance(org_id: int, attendance_id: int) -> dict[str, Any] | None:
     """Fetch a single attendance record by ID scoped to the organization."""
     query = """
-        SELECT id, org_id, employee_id, attendance_date,
-               check_in_time, check_out_time, status, notes,
-               created_at, updated_at
-        FROM attendance
-        WHERE id = :id AND org_id = :org_id
+        SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
+               a.check_in_time, a.check_out_time, a.status, a.notes,
+               a.created_at, a.updated_at,
+               e.full_name AS employee_name, e.department
+        FROM attendance a
+        JOIN employees e ON a.employee_id = e.id
+        WHERE a.id = :id AND a.org_id = :org_id
     """
     result = await database.fetch_one(query, {"id": attendance_id, "org_id": org_id})
     return dict(result) if result else None
@@ -116,7 +118,8 @@ async def list_attendance(
     data_query = f"""
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
                a.check_in_time, a.check_out_time, a.status, a.notes,
-               a.created_at, a.updated_at
+               a.created_at, a.updated_at,
+               e.full_name AS employee_name, e.department
         FROM attendance a
         {join_clause}
         WHERE {where_clause}

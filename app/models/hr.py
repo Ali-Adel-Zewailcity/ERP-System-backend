@@ -253,6 +253,8 @@ class AttendanceResponse(BaseModel):
             "example": {
                 "id": 1,
                 "employee_id": 1,
+                "employee_name": "Ali Hassan",
+                "department": "Engineering",
                 "org_id": 1,
                 "attendance_date": "2026-07-08",
                 "check_in_time": "09:00:00",
@@ -267,6 +269,8 @@ class AttendanceResponse(BaseModel):
 
     id: int
     employee_id: int
+    employee_name: str | None = None
+    department: str | None = None
     org_id: int
     attendance_date: date
     check_in_time: time | None = None

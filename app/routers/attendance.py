@@ -88,6 +88,9 @@ async def create_new_attendance(
         notes=req.notes,
     )
 
+    # Re-fetch with JOIN data (employee_name, department)
+    full_record = await get_attendance(current_user.org_id, new_record["id"])
+
     await log_activity(
         org_id=current_user.org_id,
         user_id=current_user.id,
@@ -97,7 +100,7 @@ async def create_new_attendance(
         new_value={"employee_id": req.employee_id, "attendance_date": str(req.attendance_date)},
     )
 
-    return AttendanceResponse.model_validate(new_record)
+    return AttendanceResponse.model_validate(full_record or new_record)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -223,6 +226,9 @@ async def update_attendance_by_id(
         values=values,
     )
 
+    # Re-fetch with JOIN data (employee_name, department)
+    full_record = await get_attendance(current_user.org_id, attendance_id)
+
     await log_activity(
         org_id=current_user.org_id,
         user_id=current_user.id,
@@ -233,7 +239,7 @@ async def update_attendance_by_id(
         new_value={k: str(v) for k, v in values.items()},
     )
 
-    return AttendanceResponse.model_validate(updated)
+    return AttendanceResponse.model_validate(full_record or updated)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
