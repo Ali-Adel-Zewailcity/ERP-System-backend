@@ -15,4 +15,8 @@ from app.models.hr import (
     EmployeeListResponse,
     AttachmentResponse,
     ActivityLogResponse,
+    AttendanceCreate,
+    AttendanceUpdate,
+    AttendanceResponse,
+    AttendanceListResponse,
 )

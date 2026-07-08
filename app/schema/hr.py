@@ -97,28 +97,34 @@ employees = sa.Table(
 # ─────────────────────────────────────────────────────────────────────────────
 # attendance
 # ─────────────────────────────────────────────────────────────────────────────
-_ATTENDANCE_STATUSES = "('present','absent','late','on_leave','holiday')"
+_ATTENDANCE_STATUSES = "('present','absent','late','leave','holiday')"
 
 attendance = sa.Table(
     "attendance",
     metadata,
-    sa.Column("id",          sa.Integer,  primary_key=True, autoincrement=True),
-    sa.Column("employee_id", sa.Integer,  sa.ForeignKey("employees.id", ondelete="CASCADE"),
+    sa.Column("id",              sa.Integer,        primary_key=True, autoincrement=True),
+    sa.Column("employee_id",     sa.Integer,        sa.ForeignKey("employees.id", ondelete="CASCADE"),
               nullable=False, index=True),
-    sa.Column("date",        sa.Date,     nullable=False),
-    sa.Column("check_in",    sa.Time(timezone=True), nullable=True),
-    sa.Column("check_out",   sa.Time(timezone=True), nullable=True),
-    sa.Column("status",      sa.String(10), nullable=False),
-    sa.Column("notes",       sa.Text,      nullable=True),
+    sa.Column("org_id",          sa.Integer,        sa.ForeignKey("organizations.id", ondelete="CASCADE"),
+              nullable=False, index=True),
+    sa.Column("attendance_date", sa.Date,           nullable=False),
+    sa.Column("check_in_time",   sa.Time(timezone=True), nullable=True),
+    sa.Column("check_out_time",  sa.Time(timezone=True), nullable=True),
+    sa.Column("status",          sa.String(10),     nullable=False),
+    sa.Column("notes",           sa.Text,           nullable=True),
+    sa.Column("created_at",      sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now()),
+    sa.Column("updated_at",      sa.DateTime(timezone=True), nullable=False,
+              server_default=sa.func.now(), onupdate=sa.func.now()),
     # One record per employee per day.
-    sa.UniqueConstraint("employee_id", "date", name="uq_attendance_employee_id_date"),
+    sa.UniqueConstraint("employee_id", "attendance_date", name="uq_attendance_employee_id_attendance_date"),
     sa.CheckConstraint(
         f"status IN {_ATTENDANCE_STATUSES}",
         name="ck_attendance_valid_status",
     ),
-    # check_out must be after check_in when both are provided.
+    # check_out_time must be after check_in_time when both are provided.
     sa.CheckConstraint(
-        "check_out IS NULL OR check_in IS NULL OR check_out > check_in",
+        "check_out_time IS NULL OR check_in_time IS NULL OR check_out_time > check_in_time",
         name="ck_attendance_checkout_after_checkin",
     ),
 )

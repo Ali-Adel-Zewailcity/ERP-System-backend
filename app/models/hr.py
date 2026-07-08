@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -191,3 +191,97 @@ class ActivityLogResponse(BaseModel):
     old_value: Any = None
     new_value: Any = None
     timestamp: datetime
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Attendance
+# ─────────────────────────────────────────────────────────────────────────────
+
+AttendanceStatusLiteral = Literal["present", "absent", "late", "leave", "holiday"]
+
+
+class AttendanceCreate(BaseModel):
+    """Request model for creating an attendance record."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "employee_id": 1,
+                "attendance_date": "2026-07-08",
+                "check_in_time": "09:00:00",
+                "check_out_time": "18:00:00",
+                "status": "present",
+                "notes": "On time",
+            }
+        }
+    )
+
+    employee_id: int
+    attendance_date: date
+    check_in_time: time | None = None
+    check_out_time: time | None = None
+    status: AttendanceStatusLiteral
+    notes: str | None = None
+
+
+class AttendanceUpdate(BaseModel):
+    """Request model for updating an attendance record. All fields are optional."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "check_in_time": "09:15:00",
+                "check_out_time": "17:30:00",
+                "status": "late",
+                "notes": "Arrived late due to traffic",
+            }
+        }
+    )
+
+    check_in_time: time | None = None
+    check_out_time: time | None = None
+    status: AttendanceStatusLiteral | None = None
+    notes: str | None = None
+
+
+class AttendanceResponse(BaseModel):
+    """Response model representing an attendance record."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "employee_id": 1,
+                "org_id": 1,
+                "attendance_date": "2026-07-08",
+                "check_in_time": "09:00:00",
+                "check_out_time": "18:00:00",
+                "status": "present",
+                "notes": "On time",
+                "created_at": "2026-07-08T00:00:00Z",
+                "updated_at": "2026-07-08T00:00:00Z",
+            }
+        },
+    )
+
+    id: int
+    employee_id: int
+    org_id: int
+    attendance_date: date
+    check_in_time: time | None = None
+    check_out_time: time | None = None
+    status: str
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AttendanceListResponse(BaseModel):
+    """Paginated list response for attendance records."""
+
+    items: list[AttendanceResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
