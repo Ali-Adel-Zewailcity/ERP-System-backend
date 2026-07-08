@@ -119,6 +119,16 @@ def require_table_access(user: UserResponse, table: str) -> None:
         )
 
 
+def require_write_access(user: UserResponse, table: str) -> None:
+    """Raise 403 if the user cannot write to the given table (employees are read-only)."""
+    require_table_access(user, table)
+    if user.role == "employee":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have permission to modify this resource. Contact an owner or admin.",
+        )
+
+
 def validate_role_department_pair(role: RoleLiteral | None, department: DepartmentLiteral | None) -> None:
     """
     Validate that the role/department combination makes sense.
