@@ -1,5 +1,6 @@
 fastapi[standard]
 uvicorn[standard]
+openpyxl
 pydantic
 pydantic-settings
 sqlalchemy
@@ -14,3 +15,4 @@ python-dotenv
 PyJWT
 pwdlib
 pwdlib[argon2]
+aiofiles
