@@ -62,7 +62,8 @@ async def get_employee(org_id: int, employee_id: int) -> dict[str, Any] | None:
         FROM employees
         WHERE id = :id AND org_id = :org_id
     """
-    return await database.fetch_one(query, {"id": employee_id, "org_id": org_id})
+    result = await database.fetch_one(query, {"id": employee_id, "org_id": org_id})
+    return dict(result) if result else None
 
 
 SORTABLE_COLUMNS = frozenset({
@@ -125,7 +126,7 @@ async def list_all_employees_for_org(
         ORDER BY {sort_by} {order_dir}, id
     """
     rows = await database.fetch_all(query, params)
-    return list(rows)
+    return [dict(r) for r in rows]
 
 
 async def list_employees(
@@ -201,7 +202,7 @@ async def list_employees(
     params["offset"] = offset
     rows = await database.fetch_all(data_query, params)
 
-    return list(rows), total
+    return [dict(r) for r in rows], total
 
 
 async def get_employee_stats(
