@@ -288,6 +288,7 @@ class AttendanceResponse(BaseModel):
     check_in_time: time | None = None
     check_out_time: time | None = None
     status: str
+    source: str = "manual"
     notes: str | None = None
     created_at: datetime
     updated_at: datetime

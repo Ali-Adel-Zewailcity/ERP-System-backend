@@ -210,11 +210,13 @@ async def update_leave(
 
     set_clause = ", ".join(f"{k} = :{k}" for k in values)
     values["id"] = leave_id
+    values["org_id"] = org_id
 
     query = f"""
         UPDATE leave_requests
         SET {set_clause}
         WHERE id = :id
+          AND employee_id IN (SELECT id FROM employees WHERE org_id = :org_id)
         RETURNING id, employee_id, approved_by, leave_type,
                   start_date, end_date, total_days, reason, status,
                   requested_at, resolved_at

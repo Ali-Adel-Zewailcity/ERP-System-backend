@@ -16,7 +16,7 @@ Endpoints
 """
 
 import io
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query, UploadFile, File, Response
 
@@ -44,6 +44,7 @@ from app.utils.leave_requests import (
 )
 from app.utils.import_export import generate_export, _parse_xlsx, _parse_csv
 from app.utils.activity_log import log_activity
+from app.utils.attendance import create_attendance
 
 router = APIRouter(prefix="/leave-requests", tags=["Leave Requests"])
 
@@ -383,10 +384,24 @@ async def bulk_delete_leave_requests(
 
     deleted = 0
     for leave_id in req.ids:
-        ok = await delete_leave(current_user.org_id, leave_id)
-        if ok:
-            deleted += 1
-            await log_activity(
+        existing = await get_leave(current_user.org_id, leave_id)
+        if not existing:
+            continue
+        # Clean up auto-generated attendance records for approved leaves
+        if existing["status"] == "approved":
+            emp_id = existing["employee_id"]
+            s = date.fromisoformat(existing["start_date"])
+            e = date.fromisoformat(existing["end_date"])
+            await database.execute(
+                """DELETE FROM attendance
+                   WHERE employee_id = :eid
+                     AND attendance_date BETWEEN :sdt AND :edt
+                     AND source = 'leave'""",
+                {"eid": emp_id, "sdt": s.isoformat(), "edt": e.isoformat()},
+            )
+        await delete_leave(current_user.org_id, leave_id)
+        deleted += 1
+        await log_activity(
                 org_id=current_user.org_id,
                 user_id=current_user.id,
                 action="deleted",
@@ -423,6 +438,51 @@ async def bulk_change_leave_status(
         existing = await get_leave(current_user.org_id, leave_id)
         if not existing:
             continue
+
+        old_status = existing["status"]
+        new_status = req.status
+        do_attendance_sync = old_status != new_status
+
+        if do_attendance_sync and new_status == "approved":
+            # Create 'leave' attendance records for each date in the leave range
+            emp_id = existing["employee_id"]
+            start = date.fromisoformat(existing["start_date"])
+            end = date.fromisoformat(existing["end_date"])
+            current = start
+            while current <= end:
+                # Check if a manual attendance record already exists for this day
+                existing_att = await database.fetch_one(
+                    "SELECT id, source FROM attendance WHERE employee_id = :eid AND attendance_date = :dt",
+                    {"eid": emp_id, "dt": current.isoformat()},
+                )
+                if existing_att and existing_att["source"] == "manual":
+                    current += timedelta(days=1)
+                    continue
+                if existing_att and existing_att["source"] == "leave":
+                    current += timedelta(days=1)
+                    continue
+                await create_attendance(
+                    org_id=current_user.org_id,
+                    employee_id=emp_id,
+                    attendance_date=current,
+                    status="leave",
+                    source="leave",
+                )
+                current += timedelta(days=1)
+
+        elif do_attendance_sync and new_status in ("rejected", "cancelled"):
+            # Remove auto-generated leave attendance records
+            emp_id = existing["employee_id"]
+            start = date.fromisoformat(existing["start_date"])
+            end = date.fromisoformat(existing["end_date"])
+            await database.execute(
+                """DELETE FROM attendance
+                   WHERE employee_id = :eid
+                     AND attendance_date BETWEEN :sdt AND :edt
+                     AND source = 'leave'""",
+                {"eid": emp_id, "sdt": start.isoformat(), "edt": end.isoformat()},
+            )
+
         await update_leave(
             org_id=current_user.org_id,
             leave_id=leave_id,
@@ -514,6 +574,47 @@ async def update_leave_by_id(
             end = date.fromisoformat(end)
         values["total_days"] = (end - start).days + 1
 
+    old_status = existing["status"]
+    new_status = values.get("status")
+    do_attendance_sync = new_status is not None and old_status != new_status
+
+    if do_attendance_sync and new_status == "approved":
+        emp_id = existing["employee_id"]
+        effective_start = date.fromisoformat(values.get("start_date", existing["start_date"]))
+        effective_end = date.fromisoformat(values.get("end_date", existing["end_date"]))
+        current = effective_start
+        while current <= effective_end:
+            existing_att = await database.fetch_one(
+                "SELECT id, source FROM attendance WHERE employee_id = :eid AND attendance_date = :dt",
+                {"eid": emp_id, "dt": current.isoformat()},
+            )
+            if existing_att and existing_att["source"] == "manual":
+                current += timedelta(days=1)
+                continue
+            if existing_att and existing_att["source"] == "leave":
+                current += timedelta(days=1)
+                continue
+            await create_attendance(
+                org_id=current_user.org_id,
+                employee_id=emp_id,
+                attendance_date=current,
+                status="leave",
+                source="leave",
+            )
+            current += timedelta(days=1)
+
+    elif do_attendance_sync and new_status in ("rejected", "cancelled"):
+        emp_id = existing["employee_id"]
+        effective_start = date.fromisoformat(values.get("start_date", existing["start_date"]))
+        effective_end = date.fromisoformat(values.get("end_date", existing["end_date"]))
+        await database.execute(
+            """DELETE FROM attendance
+               WHERE employee_id = :eid
+                 AND attendance_date BETWEEN :sdt AND :edt
+                 AND source = 'leave'""",
+            {"eid": emp_id, "sdt": effective_start.isoformat(), "edt": effective_end.isoformat()},
+        )
+
     updated = await update_leave(
         org_id=current_user.org_id,
         leave_id=leave_id,
@@ -556,6 +657,19 @@ async def delete_leave_by_id(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Leave request not found.",
+        )
+
+    # Clean up auto-generated attendance records when a leave is deleted
+    if existing["status"] == "approved":
+        emp_id = existing["employee_id"]
+        start = date.fromisoformat(existing["start_date"])
+        end = date.fromisoformat(existing["end_date"])
+        await database.execute(
+            """DELETE FROM attendance
+               WHERE employee_id = :eid
+                 AND attendance_date BETWEEN :sdt AND :edt
+                 AND source = 'leave'""",
+            {"eid": emp_id, "sdt": start.isoformat(), "edt": end.isoformat()},
         )
 
     await delete_leave(current_user.org_id, leave_id)
