@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import database
-from app.routers import auth, user, rbac, organization, hr, attendance, leave_requests, top_performance
+from app.routers import auth, user, rbac, organization, hr, attendance, leave_requests, top_performance, payroll
 
 
 # ─────────────────────────────────────────────────────────────────────────────
