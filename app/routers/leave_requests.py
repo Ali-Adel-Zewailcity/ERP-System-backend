@@ -1,6 +1,24 @@
+"""
+Leave Requests Router — Leave request management endpoints.
+
+Endpoints
+---------
+  POST   /leave-requests/               - Create a leave request
+  GET    /leave-requests/               - List leave requests (paginated, filterable)
+  GET    /leave-requests/export         - Export leave requests (XLSX or CSV)
+  GET    /leave-requests/export/template - Download import template
+  POST   /leave-requests/import         - Import leave requests from file
+  POST   /leave-requests/bulk/delete    - Delete multiple leave requests
+  POST   /leave-requests/bulk/status    - Change status of multiple leave requests
+  GET    /leave-requests/{leave_id}     - Get a single leave request by ID
+  PUT    /leave-requests/{leave_id}     - Update a leave request
+  DELETE /leave-requests/{leave_id}     - Delete a leave request
+"""
+
+import io
 from datetime import date, datetime, timezone
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
+from typing import Annotated, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Path, Query, UploadFile, File, Response
 
 from app.db.database import database
 from app.models.auth import UserResponse
@@ -9,6 +27,9 @@ from app.models.hr import (
     LeaveUpdate,
     LeaveResponse,
     LeaveListResponse,
+    BulkDeleteRequest,
+    LeaveBulkStatusRequest,
+    ImportSummary,
 )
 from app.utils.dependency import require_organization_member
 from app.utils.roles import require_table_access, require_write_access
@@ -16,14 +37,20 @@ from app.utils.leave_requests import (
     create_leave,
     get_leave,
     list_leaves,
+    list_all_leaves_for_org,
     update_leave,
     delete_leave,
     SORTABLE_COLUMNS,
 )
+from app.utils.import_export import generate_export, _parse_xlsx, _parse_csv
 from app.utils.activity_log import log_activity
 
 router = APIRouter(prefix="/leave-requests", tags=["Leave Requests"])
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Create
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.post(
     "/",
@@ -77,6 +104,10 @@ async def create_new_leave(
     return LeaveResponse.model_validate(full_record or new_record)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# List (paginated, filterable)
+# ─────────────────────────────────────────────────────────────────────────────
+
 @router.get(
     "/",
     response_model=LeaveListResponse,
@@ -124,6 +155,297 @@ async def list_all_leaves(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Export
+# ─────────────────────────────────────────────────────────────────────────────
+
+LEAVE_EXPORT_HEADERS = [
+    "employee_name", "department", "leave_type",
+    "start_date", "end_date", "total_days", "status", "reason",
+]
+
+
+@router.get(
+    "/export",
+    summary="Export Leave Requests",
+    description="Export leave requests to XLSX or CSV.",
+)
+async def export_leave_requests(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+    format: Annotated[str, Query(pattern="^(xlsx|csv)$")] = "xlsx",
+    scope: Annotated[str, Query(pattern="^(filtered|all)$")] = "filtered",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    status_param: Annotated[str | None, Query(alias="status", pattern="^(pending|approved|rejected|cancelled)?$")] = None,
+    leave_type: Annotated[str | None, Query(pattern="^(annual|sick|unpaid|emergency|maternity|paternity)?$")] = None,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+    department: Annotated[str | None, Query(max_length=100)] = None,
+    sort_by: Annotated[str | None, Query()] = None,
+    sort_order: Annotated[str | None, Query(pattern="^(asc|desc)?$")] = None,
+):
+    """Export leave requests to XLSX or CSV."""
+    require_table_access(current_user, "leave_requests")
+
+    if scope == "filtered":
+        rows, _ = await list_leaves(
+            org_id=current_user.org_id,
+            page=page,
+            page_size=page_size,
+            search=search,
+            status=status_param,
+            leave_type=leave_type,
+            date_from=date_from.isoformat() if date_from else None,
+            date_to=date_to.isoformat() if date_to else None,
+            department=department,
+            sort_by=sort_by or "requested_at",
+            sort_order=sort_order or "desc",
+        )
+    else:
+        rows = await list_all_leaves_for_org(
+            org_id=current_user.org_id,
+            search=search,
+            status=status_param,
+            leave_type=leave_type,
+            date_from=date_from.isoformat() if date_from else None,
+            date_to=date_to.isoformat() if date_to else None,
+            department=department,
+            sort_by=sort_by or "requested_at",
+            sort_order=sort_order or "desc",
+        )
+
+    content = generate_export(rows, format, headers=LEAVE_EXPORT_HEADERS)
+
+    if format == "csv":
+        media_type = "text/csv"
+        filename = "leave_requests.csv"
+    else:
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "leave_requests.xlsx"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Import
+# ─────────────────────────────────────────────────────────────────────────────
+
+IMPORT_TEMPLATE_HEADERS = [
+    "employee_name",
+    "leave_type",
+    "start_date",
+    "end_date",
+    "reason",
+]
+
+
+@router.get(
+    "/export/template",
+    summary="Download Leave Import Template",
+    description="Download an XLSX template for importing leave requests.",
+)
+async def download_leave_template(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+):
+    """Return an XLSX template file."""
+    require_table_access(current_user, "leave_requests")
+    from app.utils.import_export import _write_rows_to_xlsx
+
+    example = [{
+        "employee_name": "Ali Hassan",
+        "leave_type": "annual",
+        "start_date": "2026-07-01",
+        "end_date": "2026-07-05",
+        "reason": "Annual vacation",
+    }]
+    content = _write_rows_to_xlsx(example, IMPORT_TEMPLATE_HEADERS)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=leave_import_template.xlsx"},
+    )
+
+
+@router.post(
+    "/import",
+    response_model=ImportSummary,
+    summary="Import Leave Requests",
+    description="Import leave requests from an XLSX or CSV file.",
+)
+async def import_leave_requests(
+    file: Annotated[UploadFile, File(description="XLSX or CSV file")],
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+) -> ImportSummary:
+    """Import leave requests from a file."""
+    require_write_access(current_user, "leave_requests")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty.")
+
+    filename = file.filename or "import.xlsx"
+    try:
+        if filename.endswith(".csv"):
+            rows = _parse_csv(content)
+        else:
+            rows = _parse_xlsx(content)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data found in file.")
+
+    # Build a lookup of employee name → employee_id for this org
+    employees_lookup = await database.fetch_all(
+        "SELECT id, full_name FROM employees WHERE org_id = :org_id",
+        {"org_id": current_user.org_id},
+    )
+    name_to_id = {r["full_name"].strip().lower(): r["id"] for r in employees_lookup}
+
+    errors = []
+    imported = 0
+
+    for i, row in enumerate(rows, start=1):
+        row_errors = []
+        emp_name = (row.get("employee_name") or "").strip()
+        emp_id = name_to_id.get(emp_name.lower())
+
+        if not emp_name:
+            row_errors.append("employee_name is required.")
+        elif not emp_id:
+            row_errors.append(f"Employee '{emp_name}' not found in your organization.")
+
+        raw_leave_type = (row.get("leave_type") or "").strip().lower()
+        valid_leave_types = {"annual", "sick", "unpaid", "emergency", "maternity", "paternity"}
+        if raw_leave_type and raw_leave_type not in valid_leave_types:
+            row_errors.append(f"Invalid leave_type '{raw_leave_type}'. Must be one of: {', '.join(sorted(valid_leave_types))}.")
+        if not raw_leave_type:
+            row_errors.append("leave_type is required.")
+
+        raw_start = row.get("start_date")
+        raw_end = row.get("end_date")
+        if not raw_start:
+            row_errors.append("start_date is required.")
+        if not raw_end:
+            row_errors.append("end_date is required.")
+
+        if row_errors:
+            errors.append({"row": i, "reasons": "; ".join(row_errors)})
+            continue
+
+        try:
+            start = date.fromisoformat(raw_start)
+            end = date.fromisoformat(raw_end)
+            total_days = (end - start).days + 1
+
+            await create_leave(
+                org_id=current_user.org_id,
+                employee_id=emp_id,
+                leave_type=raw_leave_type,
+                start_date=start,
+                end_date=end,
+                total_days=total_days,
+                reason=row.get("reason") or None,
+            )
+            imported += 1
+        except Exception as exc:
+            errors.append({"row": i, "reasons": f"Failed to import: {str(exc)}"})
+
+    return ImportSummary(
+        total=len(rows),
+        imported=imported,
+        failed=len(rows) - imported,
+        errors=errors,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bulk Delete
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/bulk/delete",
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Delete Leave Requests",
+    description="Delete multiple leave requests by IDs.",
+)
+async def bulk_delete_leave_requests(
+    req: BulkDeleteRequest,
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+) -> dict[str, Any]:
+    """Delete multiple leave requests."""
+    require_write_access(current_user, "leave_requests")
+
+    deleted = 0
+    for leave_id in req.ids:
+        ok = await delete_leave(current_user.org_id, leave_id)
+        if ok:
+            deleted += 1
+            await log_activity(
+                org_id=current_user.org_id,
+                user_id=current_user.id,
+                action="deleted",
+                entity_type="leave_request",
+                entity_id=leave_id,
+            )
+
+    return {"message": f"{deleted} leave request(s) deleted.", "deleted": deleted}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bulk Status Change
+# ─────────────────────────────────────────────────────────────────────────────
+
+VALID_BULK_STATUSES = {"pending", "approved", "rejected", "cancelled"}
+
+
+@router.post(
+    "/bulk/status",
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Change Leave Status",
+    description="Change the status of multiple leave requests.",
+)
+async def bulk_change_leave_status(
+    req: LeaveBulkStatusRequest,
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+) -> dict[str, Any]:
+    """Change the status of multiple leave requests."""
+    require_write_access(current_user, "leave_requests")
+
+    now = datetime.now(timezone.utc).isoformat()
+    updated = 0
+    for leave_id in req.ids:
+        existing = await get_leave(current_user.org_id, leave_id)
+        if not existing:
+            continue
+        await update_leave(
+            org_id=current_user.org_id,
+            leave_id=leave_id,
+            values={"status": req.status, "resolved_at": now},
+        )
+        updated += 1
+        await log_activity(
+            org_id=current_user.org_id,
+            user_id=current_user.id,
+            action="status_changed",
+            entity_type="leave_request",
+            entity_id=leave_id,
+            old_value={"status": existing["status"]},
+            new_value={"status": req.status},
+        )
+
+    return {"message": f"{updated} leave request(s) updated.", "updated": updated}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Get by ID
+# ─────────────────────────────────────────────────────────────────────────────
+
 @router.get(
     "/{leave_id}",
     response_model=LeaveResponse,
@@ -145,6 +467,10 @@ async def get_leave_by_id(
 
     return LeaveResponse.model_validate(record)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Update
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.put(
     "/{leave_id}",
@@ -208,6 +534,10 @@ async def update_leave_by_id(
 
     return LeaveResponse.model_validate(full_record or updated)
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Delete
+# ─────────────────────────────────────────────────────────────────────────────
 
 @router.delete(
     "/{leave_id}",

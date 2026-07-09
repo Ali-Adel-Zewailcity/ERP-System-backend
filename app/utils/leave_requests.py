@@ -137,6 +137,68 @@ async def list_leaves(
     return [dict(r) for r in rows], total
 
 
+async def list_all_leaves_for_org(
+    org_id: int,
+    search: str | None = None,
+    status: str | None = None,
+    leave_type: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    department: str | None = None,
+    sort_by: str = "requested_at",
+    sort_order: str = "desc",
+) -> list[dict[str, Any]]:
+    """Return ALL leave requests for an org (unpaginated) with optional filters."""
+    conditions = ["e.org_id = :org_id"]
+    params: dict[str, Any] = {"org_id": org_id}
+
+    if search:
+        conditions.append("e.full_name LIKE :search")
+        params["search"] = f"%{search}%"
+
+    if status:
+        conditions.append("lr.status = :status")
+        params["status"] = status
+
+    if leave_type:
+        conditions.append("lr.leave_type = :leave_type")
+        params["leave_type"] = leave_type
+
+    if date_from:
+        conditions.append("lr.start_date >= :date_from")
+        params["date_from"] = date_from
+
+    if date_to:
+        conditions.append("lr.end_date <= :date_to")
+        params["date_to"] = date_to
+
+    if department:
+        conditions.append("e.department = :department")
+        params["department"] = department
+
+    where_clause = " AND ".join(conditions)
+
+    if sort_by not in SORTABLE_COLUMNS:
+        sort_by = "requested_at"
+    order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
+
+    query = f"""
+        SELECT lr.id, lr.employee_id, lr.approved_by,
+               lr.leave_type, lr.start_date, lr.end_date,
+               lr.total_days, lr.reason, lr.status,
+               lr.requested_at, lr.resolved_at,
+               e.full_name AS employee_name, e.department,
+               au.username AS approver_name
+        FROM leave_requests lr
+        JOIN employees e ON lr.employee_id = e.id
+        LEFT JOIN users au ON lr.approved_by = au.id
+        WHERE {where_clause}
+        ORDER BY lr.{sort_by} {order_dir}, lr.id
+    """
+    rows = await database.fetch_all(query, params)
+    return [dict(r) for r in rows]
+
+
 async def update_leave(
     org_id: int,
     leave_id: int,

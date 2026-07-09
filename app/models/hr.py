@@ -5,7 +5,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.utils.phone import mobile_registry
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Type Aliases (must be declared before any model that references them)
+# ─────────────────────────────────────────────────────────────────────────────
+
 EmployeeStatusLiteral = Literal["active", "resigned"]
+AttendanceStatusLiteral = Literal["present", "absent", "late", "leave", "holiday"]
+LeaveTypeLiteral = Literal["annual", "sick", "unpaid", "emergency", "maternity", "paternity"]
+LeaveStatusLiteral = Literal["pending", "approved", "rejected", "cancelled"]
 
 
 class EmployeeCreate(BaseModel):
@@ -139,6 +146,13 @@ class BulkStatusRequest(BaseModel):
     status: EmployeeStatusLiteral
 
 
+class LeaveBulkStatusRequest(BaseModel):
+    """Request model for bulk leave request status change."""
+
+    ids: list[int]
+    status: LeaveStatusLiteral
+
+
 class ImportSummary(BaseModel):
     """Summary of an import operation."""
 
@@ -196,8 +210,6 @@ class ActivityLogResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Attendance
 # ─────────────────────────────────────────────────────────────────────────────
-
-AttendanceStatusLiteral = Literal["present", "absent", "late", "leave", "holiday"]
 
 
 class AttendanceCreate(BaseModel):
@@ -294,9 +306,6 @@ class AttendanceListResponse(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 # Leave Requests
 # ─────────────────────────────────────────────────────────────────────────────
-
-LeaveTypeLiteral = Literal["annual", "sick", "unpaid", "emergency", "maternity", "paternity"]
-LeaveStatusLiteral = Literal["pending", "approved", "rejected", "cancelled"]
 
 
 class LeaveCreate(BaseModel):
