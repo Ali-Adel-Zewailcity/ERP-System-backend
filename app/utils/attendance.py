@@ -24,15 +24,16 @@ async def create_attendance(
     check_in_time: time | None = None,
     check_out_time: time | None = None,
     notes: str | None = None,
+    source: str = "manual",
 ) -> dict[str, Any]:
     """Insert a new attendance record and return the full record."""
     query = """
         INSERT INTO attendance (org_id, employee_id, attendance_date,
-                                check_in_time, check_out_time, status, notes)
+                                check_in_time, check_out_time, status, notes, source)
         VALUES (:org_id, :employee_id, :attendance_date,
-                :check_in_time, :check_out_time, :status, :notes)
+                :check_in_time, :check_out_time, :status, :notes, :source)
         RETURNING id, org_id, employee_id, attendance_date,
-                  check_in_time, check_out_time, status, notes,
+                  check_in_time, check_out_time, status, source, notes,
                   created_at, updated_at
     """
     result = await database.fetch_one(query, {
@@ -43,6 +44,7 @@ async def create_attendance(
         "check_out_time": check_out_time.isoformat() if check_out_time else None,
         "status": status,
         "notes": notes,
+        "source": source,
     })
     return dict(result)
 
@@ -51,7 +53,7 @@ async def get_attendance(org_id: int, attendance_id: int) -> dict[str, Any] | No
     """Fetch a single attendance record by ID scoped to the organization."""
     query = """
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
-               a.check_in_time, a.check_out_time, a.status, a.notes,
+               a.check_in_time, a.check_out_time, a.status, a.source, a.notes,
                a.created_at, a.updated_at,
                e.full_name AS employee_name, e.department
         FROM attendance a
@@ -117,7 +119,7 @@ async def list_attendance(
     offset = (page - 1) * page_size
     data_query = f"""
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
-               a.check_in_time, a.check_out_time, a.status, a.notes,
+               a.check_in_time, a.check_out_time, a.status, a.source, a.notes,
                a.created_at, a.updated_at,
                e.full_name AS employee_name, e.department
         FROM attendance a
@@ -151,7 +153,7 @@ async def update_attendance(
         SET {set_clause}
         WHERE id = :id AND org_id = :org_id
         RETURNING id, org_id, employee_id, attendance_date,
-                  check_in_time, check_out_time, status, notes,
+                  check_in_time, check_out_time, status, source, notes,
                   created_at, updated_at
     """
     result = await database.fetch_one(query, values)
@@ -200,7 +202,7 @@ async def list_all_attendance_for_org(
 
     query = f"""
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
-               a.check_in_time, a.check_out_time, a.status, a.notes,
+               a.check_in_time, a.check_out_time, a.status, a.source, a.notes,
                a.created_at, a.updated_at,
                e.full_name AS employee_name, e.department
         FROM attendance a

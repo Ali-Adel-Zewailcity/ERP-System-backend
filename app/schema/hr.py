@@ -111,6 +111,8 @@ attendance = sa.Table(
     sa.Column("check_in_time",   sa.Time(timezone=True), nullable=True),
     sa.Column("check_out_time",  sa.Time(timezone=True), nullable=True),
     sa.Column("status",          sa.String(10),     nullable=False),
+    sa.Column("source",          sa.String(20),     nullable=False,
+              server_default=sa.text("'manual'")),
     sa.Column("notes",           sa.Text,           nullable=True),
     sa.Column("created_at",      sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),

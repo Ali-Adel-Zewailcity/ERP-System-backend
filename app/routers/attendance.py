@@ -170,8 +170,28 @@ async def list_all_attendance(
 
 ATTENDANCE_EXPORT_HEADERS = [
     "employee_name", "department", "attendance_date",
-    "check_in_time", "check_out_time", "status", "notes",
+    "check_in_time", "check_out_time", "overtime", "status", "notes",
 ]
+
+
+def _calc_overtime(check_in: str | None, check_out: str | None) -> str:
+    """Calculate overtime (hours beyond 8h) as a human-readable string."""
+    if not check_in or not check_out:
+        return ""
+    try:
+        parts_in = check_in.split(":")
+        parts_out = check_out.split(":")
+        in_min = int(parts_in[0]) * 60 + int(parts_in[1])
+        out_min = int(parts_out[0]) * 60 + int(parts_out[1])
+        diff = out_min - in_min
+        if diff <= 8 * 60:
+            return "0h"
+        ot = diff - 8 * 60
+        h = ot // 60
+        m = ot % 60
+        return f"{h}h{m}m" if m else f"{h}h"
+    except (ValueError, IndexError):
+        return ""
 
 
 @router.get(
@@ -220,6 +240,9 @@ async def export_attendance(
             sort_by=sort_by or "attendance_date",
             sort_order=sort_order or "desc",
         )
+
+    for row in rows:
+        row["overtime"] = _calc_overtime(row.get("check_in_time"), row.get("check_out_time"))
 
     content = generate_export(rows, format, headers=ATTENDANCE_EXPORT_HEADERS)
 
