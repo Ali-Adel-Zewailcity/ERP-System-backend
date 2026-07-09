@@ -158,6 +158,60 @@ async def update_attendance(
     return dict(result) if result else None
 
 
+async def list_all_attendance_for_org(
+    org_id: int,
+    search: str | None = None,
+    department: str | None = None,
+    status: str | None = None,
+    attendance_date_from: str | None = None,
+    attendance_date_to: str | None = None,
+    sort_by: str = "attendance_date",
+    sort_order: str = "desc",
+) -> list[dict[str, Any]]:
+    """Return ALL attendance records for an org (unpaginated) with optional filters."""
+    conditions = ["a.org_id = :org_id"]
+    params: dict[str, Any] = {"org_id": org_id}
+
+    if search:
+        conditions.append("e.full_name LIKE :search")
+        params["search"] = f"%{search}%"
+
+    if department:
+        conditions.append("e.department = :department")
+        params["department"] = department
+
+    if status:
+        conditions.append("a.status = :status")
+        params["status"] = status
+
+    if attendance_date_from:
+        conditions.append("a.attendance_date >= :attendance_date_from")
+        params["attendance_date_from"] = attendance_date_from
+
+    if attendance_date_to:
+        conditions.append("a.attendance_date <= :attendance_date_to")
+        params["attendance_date_to"] = attendance_date_to
+
+    where_clause = " AND ".join(conditions)
+
+    if sort_by not in SORTABLE_COLUMNS:
+        sort_by = "attendance_date"
+    order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
+
+    query = f"""
+        SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
+               a.check_in_time, a.check_out_time, a.status, a.notes,
+               a.created_at, a.updated_at,
+               e.full_name AS employee_name, e.department
+        FROM attendance a
+        JOIN employees e ON a.employee_id = e.id
+        WHERE {where_clause}
+        ORDER BY a.{sort_by} {order_dir}, a.id
+    """
+    rows = await database.fetch_all(query, params)
+    return [dict(r) for r in rows]
+
+
 async def delete_attendance(org_id: int, attendance_id: int) -> bool:
     """Delete an attendance record. Returns True if a row was deleted."""
     query = "DELETE FROM attendance WHERE id = :id AND org_id = :org_id"

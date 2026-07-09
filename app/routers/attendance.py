@@ -8,11 +8,15 @@ Endpoints
   GET    /attendance/{id}           - Get a single attendance record by ID
   PUT    /attendance/{id}           - Update an attendance record
   DELETE /attendance/{id}           - Delete an attendance record
+  GET    /attendance/export         - Export attendance records (XLSX or CSV)
+  GET    /attendance/export/template - Download import template
+  POST   /attendance/import         - Import attendance records from file
 """
 
+import io
 from datetime import date
-from typing import Annotated
-from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
+from typing import Annotated, Any
+from fastapi import APIRouter, Depends, HTTPException, status, Path, Query, UploadFile, File, Response
 
 from app.db.database import database
 from app.models.auth import UserResponse
@@ -21,6 +25,7 @@ from app.models.hr import (
     AttendanceUpdate,
     AttendanceResponse,
     AttendanceListResponse,
+    ImportSummary,
 )
 from app.utils.dependency import require_organization_member
 from app.utils.roles import require_table_access, require_write_access
@@ -28,10 +33,12 @@ from app.utils.attendance import (
     create_attendance,
     get_attendance,
     list_attendance,
+    list_all_attendance_for_org,
     update_attendance,
     delete_attendance,
     SORTABLE_COLUMNS,
 )
+from app.utils.import_export import generate_export, _parse_xlsx, _parse_csv
 from app.utils.activity_log import log_activity
 
 
@@ -154,6 +161,218 @@ async def list_all_attendance(
         page=page,
         page_size=page_size,
         pages=pages,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Export
+# ─────────────────────────────────────────────────────────────────────────────
+
+ATTENDANCE_EXPORT_HEADERS = [
+    "employee_name", "department", "attendance_date",
+    "check_in_time", "check_out_time", "status", "notes",
+]
+
+
+@router.get(
+    "/export",
+    summary="Export Attendance Records",
+    description="Export attendance records to XLSX or CSV.",
+)
+async def export_attendance(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+    format: Annotated[str, Query(pattern="^(xlsx|csv)$")] = "xlsx",
+    scope: Annotated[str, Query(pattern="^(filtered|all)$")] = "filtered",
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    status_param: Annotated[str | None, Query(alias="status", pattern="^(present|absent|late|leave|holiday)?$")] = None,
+    attendance_date_from: Annotated[date | None, Query()] = None,
+    attendance_date_to: Annotated[date | None, Query()] = None,
+    department: Annotated[str | None, Query(max_length=100)] = None,
+    sort_by: Annotated[str | None, Query()] = None,
+    sort_order: Annotated[str | None, Query(pattern="^(asc|desc)?$")] = None,
+):
+    """Export attendance records to XLSX or CSV."""
+    require_table_access(current_user, "attendance")
+
+    if scope == "filtered":
+        rows, _ = await list_attendance(
+            org_id=current_user.org_id,
+            page=page,
+            page_size=page_size,
+            search=search,
+            status=status_param,
+            attendance_date_from=attendance_date_from.isoformat() if attendance_date_from else None,
+            attendance_date_to=attendance_date_to.isoformat() if attendance_date_to else None,
+            department=department,
+            sort_by=sort_by or "attendance_date",
+            sort_order=sort_order or "desc",
+        )
+    else:
+        rows = await list_all_attendance_for_org(
+            org_id=current_user.org_id,
+            search=search,
+            status=status_param,
+            attendance_date_from=attendance_date_from.isoformat() if attendance_date_from else None,
+            attendance_date_to=attendance_date_to.isoformat() if attendance_date_to else None,
+            department=department,
+            sort_by=sort_by or "attendance_date",
+            sort_order=sort_order or "desc",
+        )
+
+    content = generate_export(rows, format, headers=ATTENDANCE_EXPORT_HEADERS)
+
+    if format == "csv":
+        media_type = "text/csv"
+        filename = "attendance.csv"
+    else:
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = "attendance.xlsx"
+
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Import
+# ─────────────────────────────────────────────────────────────────────────────
+
+IMPORT_TEMPLATE_HEADERS = [
+    "employee_name",
+    "attendance_date",
+    "check_in_time",
+    "check_out_time",
+    "status",
+    "notes",
+]
+
+
+@router.get(
+    "/export/template",
+    summary="Download Attendance Import Template",
+    description="Download an XLSX template for importing attendance records.",
+)
+async def download_attendance_template(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+):
+    """Return an XLSX template file."""
+    require_table_access(current_user, "attendance")
+    from app.utils.import_export import _write_rows_to_xlsx
+
+    example = [{
+        "employee_name": "Ali Hassan",
+        "attendance_date": "2026-07-01",
+        "check_in_time": "09:00",
+        "check_out_time": "17:00",
+        "status": "present",
+        "notes": "",
+    }]
+    content = _write_rows_to_xlsx(example, IMPORT_TEMPLATE_HEADERS)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=attendance_import_template.xlsx"},
+    )
+
+
+@router.post(
+    "/import",
+    response_model=ImportSummary,
+    summary="Import Attendance Records",
+    description="Import attendance records from an XLSX or CSV file.",
+)
+async def import_attendance(
+    file: Annotated[UploadFile, File(description="XLSX or CSV file")],
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+) -> ImportSummary:
+    """Import attendance records from a file."""
+    require_write_access(current_user, "attendance")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File is empty.")
+
+    filename = file.filename or "import.xlsx"
+    try:
+        if filename.endswith(".csv"):
+            rows = _parse_csv(content)
+        else:
+            rows = _parse_xlsx(content)
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data found in file.")
+
+    # Build a lookup of employee name → employee_id for this org
+    employees_lookup = await database.fetch_all(
+        "SELECT id, full_name FROM employees WHERE org_id = :org_id",
+        {"org_id": current_user.org_id},
+    )
+    name_to_id = {r["full_name"].strip().lower(): r["id"] for r in employees_lookup}
+
+    errors = []
+    imported = 0
+
+    for i, row in enumerate(rows, start=1):
+        row_errors = []
+        emp_name = (row.get("employee_name") or "").strip()
+        emp_id = name_to_id.get(emp_name.lower())
+
+        if not emp_name:
+            row_errors.append("employee_name is required.")
+        elif not emp_id:
+            row_errors.append(f"Employee '{emp_name}' not found in your organization.")
+
+        raw_date = row.get("attendance_date")
+        if not raw_date:
+            row_errors.append("attendance_date is required.")
+
+        raw_status = (row.get("status") or "").strip().lower()
+        valid_statuses = {"present", "absent", "late", "leave", "holiday"}
+        if raw_status and raw_status not in valid_statuses:
+            row_errors.append(f"Invalid status '{raw_status}'. Must be one of: {', '.join(sorted(valid_statuses))}.")
+        if not raw_status:
+            row_errors.append("status is required.")
+
+        if row_errors:
+            errors.append({"row": i, "reasons": "; ".join(row_errors)})
+            continue
+
+        check_in = row.get("check_in_time") or None
+        check_out = row.get("check_out_time") or None
+
+        try:
+            from datetime import time
+
+            def parse_time(val):
+                if not val:
+                    return None
+                parts = str(val).split(":")
+                return time(int(parts[0]), int(parts[1]))
+
+            await create_attendance(
+                org_id=current_user.org_id,
+                employee_id=emp_id,
+                attendance_date=date.fromisoformat(raw_date),
+                status=raw_status,
+                check_in_time=parse_time(check_in),
+                check_out_time=parse_time(check_out),
+                notes=row.get("notes") or None,
+            )
+            imported += 1
+        except Exception as exc:
+            errors.append({"row": i, "reasons": f"Failed to import: {str(exc)}"})
+
+    return ImportSummary(
+        total=len(rows),
+        imported=imported,
+        failed=len(rows) - imported,
+        errors=errors,
     )
 
 

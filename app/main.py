@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import database
-from app.routers import auth, user, rbac, organization, hr, attendance
+from app.routers import auth, user, rbac, organization, hr, attendance, leave_requests
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -56,6 +56,7 @@ app.include_router(organization.router)
 app.include_router(user.router)
 app.include_router(hr.router)
 app.include_router(attendance.router)
+app.include_router(leave_requests.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

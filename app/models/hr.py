@@ -289,3 +289,122 @@ class AttendanceListResponse(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Leave Requests
+# ─────────────────────────────────────────────────────────────────────────────
+
+LeaveTypeLiteral = Literal["annual", "sick", "unpaid", "emergency", "maternity", "paternity"]
+LeaveStatusLiteral = Literal["pending", "approved", "rejected", "cancelled"]
+
+
+class LeaveCreate(BaseModel):
+    """Request model for creating a leave request."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "employee_id": 1,
+                "leave_type": "annual",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-05",
+                "reason": "Family vacation",
+            }
+        }
+    )
+
+    employee_id: int
+    leave_type: LeaveTypeLiteral
+    start_date: date
+    end_date: date
+    reason: str | None = None
+
+    @field_validator("end_date")
+    @classmethod
+    def end_must_be_on_or_after_start(cls, v: date, info) -> date:
+        start = info.data.get("start_date")
+        if start and v < start:
+            raise ValueError("End date must be on or after start date.")
+        return v
+
+
+class LeaveUpdate(BaseModel):
+    """Request model for updating a leave request. All fields are optional."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "status": "approved",
+                "notes": "Approved by manager",
+            }
+        }
+    )
+
+    approved_by: int | None = None
+    leave_type: LeaveTypeLiteral | None = None
+    start_date: date | None = None
+    end_date: date | None = None
+    reason: str | None = None
+    status: LeaveStatusLiteral | None = None
+
+    @field_validator("end_date")
+    @classmethod
+    def end_must_be_on_or_after_start(cls, v: date | None, info) -> date | None:
+        if v is None:
+            return v
+        start = info.data.get("start_date")
+        if start and v < start:
+            raise ValueError("End date must be on or after start date.")
+        return v
+
+
+class LeaveResponse(BaseModel):
+    """Response model representing a leave request."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "employee_id": 1,
+                "employee_name": "Ali Hassan",
+                "department": "Engineering",
+                "approved_by": None,
+                "approver_name": None,
+                "leave_type": "annual",
+                "start_date": "2026-08-01",
+                "end_date": "2026-08-05",
+                "total_days": 5,
+                "reason": "Family vacation",
+                "status": "pending",
+                "requested_at": "2026-07-09T00:00:00Z",
+                "resolved_at": None,
+            }
+        },
+    )
+
+    id: int
+    employee_id: int
+    employee_name: str | None = None
+    department: str | None = None
+    approved_by: int | None = None
+    approver_name: str | None = None
+    leave_type: str
+    start_date: date
+    end_date: date
+    total_days: int
+    reason: str | None = None
+    status: str
+    requested_at: datetime
+    resolved_at: datetime | None = None
+
+
+class LeaveListResponse(BaseModel):
+    """Paginated list response for leave requests."""
+
+    items: list[LeaveResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
