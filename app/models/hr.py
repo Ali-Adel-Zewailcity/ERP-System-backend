@@ -418,3 +418,116 @@ class LeaveListResponse(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Payroll
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+PayrollStatusLiteral = Literal["pending", "paid", "cancelled"]
+
+
+class PayrollGenerate(BaseModel):
+    """Request model for generating payroll."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "employee_id": 1,
+                "month": 7,
+                "year": 2026,
+            }
+        }
+    )
+
+    employee_id: int | None = None
+    month: int
+    year: int
+
+
+class PayrollUpdate(BaseModel):
+    """Request model for updating a payroll record. All fields are optional."""
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "bonus": 500.00,
+                "allowance": 200.00,
+                "deductions": 100.00,
+                "status": "paid",
+                "notes": "Approved by manager",
+            }
+        }
+    )
+
+    bonus: Decimal | None = None
+    allowance: Decimal | None = None
+    deductions: Decimal | None = None
+    status: PayrollStatusLiteral | None = None
+    notes: str | None = None
+
+
+class PayrollResponse(BaseModel):
+    """Response model representing a payroll record."""
+
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "id": 1,
+                "org_id": 1,
+                "employee_id": 1,
+                "employee_name": "Ali Hassan",
+                "department": "Engineering",
+                "month": 7,
+                "year": 2026,
+                "days_worked": 22,
+                "absences": 0,
+                "overtime_hours": Decimal("2.5"),
+                "bonus": Decimal("350.00"),
+                "allowance": Decimal("0"),
+                "deductions": Decimal("0"),
+                "gross_salary": Decimal("50350.00"),
+                "net_salary": Decimal("50350.00"),
+                "basic_salary": Decimal("50000.00"),
+                "status": "pending",
+                "notes": None,
+                "generated_at": "2026-07-09T00:00:00Z",
+                "created_at": "2026-07-09T00:00:00Z",
+                "updated_at": "2026-07-09T00:00:00Z",
+            }
+        },
+    )
+
+    id: int
+    org_id: int
+    employee_id: int
+    employee_name: str | None = None
+    department: str | None = None
+    basic_salary: Decimal | None = None
+    month: int
+    year: int
+    days_worked: int
+    absences: int
+    overtime_hours: Decimal
+    bonus: Decimal
+    allowance: Decimal
+    deductions: Decimal
+    gross_salary: Decimal
+    net_salary: Decimal
+    status: str
+    notes: str | None = None
+    generated_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class PayrollListResponse(BaseModel):
+    """Paginated list response for payroll records."""
+
+    items: list[PayrollResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
