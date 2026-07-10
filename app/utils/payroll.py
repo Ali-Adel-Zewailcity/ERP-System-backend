@@ -20,13 +20,13 @@ SORTABLE_COLUMNS = frozenset({
 
 OVERTIME_RATE = Decimal("1.25")  # 125 % of hourly base rate
 BASE_HOURS_PER_DAY = 8
-WORKING_DAYS_PER_MONTH = 22  # typical month excluding weekends
 
 
 async def get_payroll(org_id: int, payroll_id: int) -> dict[str, Any] | None:
     """Fetch a single payroll record by ID (with JOINed employee data)."""
     query = """
         SELECT p.id, p.org_id, p.employee_id, e.full_name AS employee_name,
+               e.employee_number, e.job_title,
                e.department, e.salary AS basic_salary,
                p.month, p.year,
                p.days_worked, p.absences, p.overtime_hours,
@@ -87,8 +87,6 @@ async def list_payroll(
     # Map virtual sort columns to actual expressions
     if sort_col == "employee_name":
         sort_expr = f"e.full_name {sort_dir}"
-    elif sort_col == "department_name":
-        sort_expr = f"e.department {sort_dir}"
     else:
         sort_expr = f"p.{sort_col} {sort_dir}"
 
@@ -104,6 +102,7 @@ async def list_payroll(
     offset = (page - 1) * page_size
     data_query = f"""
         SELECT p.id, p.org_id, p.employee_id, e.full_name AS employee_name,
+               e.employee_number, e.job_title,
                e.department, e.salary AS basic_salary,
                p.month, p.year,
                p.days_worked, p.absences, p.overtime_hours,
@@ -142,16 +141,20 @@ async def generate_payroll(
     """
     Generate payroll for one or all employees in an org for a given month.
 
+    Policy: every employee has a fixed monthly Basic Salary. Absences
+    without leave are deducted at a daily rate. Approved leave and
+    holidays do NOT deduct salary.
+
     Calculation:
       - basic_salary from employees.salary
-      - per_day_rate = salary / working_days_in_month
-      - deduction = per_day_rate * absences
-      - overtime_pay = per_day_rate / 8 * overtime_hours * OVERTIME_RATE
-      - gross_salary = basic_salary + overtime_pay
-      - net_salary = gross_salary - deduction
-      - Overtime pay is stored in the bonus column.
+      - weekdays = number of Mon-Fri in the month/year
+      - daily_rate = salary / weekdays
+      - absence_deduction = daily_rate * absences
+      - overtime_pay = daily_rate / 8 * overtime_hours * OVERTIME_RATE
+      - gross_salary = basic_salary + bonus + allowance + overtime_pay
+      - net_salary = gross_salary - absence_deduction - deductions
+      - bonus, allowance, deductions are manual entries (default to 0).
     """
-    total_days = WORKING_DAYS_PER_MONTH  # fixed for consistency
 
     if employee_id:
         emp_rows = await database.fetch_all(
@@ -172,33 +175,51 @@ async def generate_payroll(
     for emp in emp_rows:
         emp_id = emp["id"]
         salary = Decimal(str(emp["salary"]))
-        per_day_rate = salary / Decimal(str(total_days))
-        per_hour_rate = per_day_rate / Decimal(str(BASE_HOURS_PER_DAY))
 
-        # Calculate attendance-derived data
+        # Calculate attendance-derived data (also returns weekdays)
         att_data = await _calculate_data(org_id, emp_id, month, year)
+
+        # Skip employees with no attendance records for this period
+        if att_data is None:
+            continue
 
         days_worked = att_data["days_worked"]
         absences = att_data["absences"]
         overtime_hours = att_data["overtime_hours"]
+        weekdays = att_data["weekdays"]
 
-        # Deduction for absences
-        deduction = (per_day_rate * Decimal(str(absences))).quantize(Decimal("0.01"))
+        daily_rate = salary / Decimal(str(weekdays))
+        per_hour_rate = daily_rate / Decimal(str(BASE_HOURS_PER_DAY))
 
-        # Overtime pay → bonus column
+        # Absence deduction = daily rate × absent days
+        absence_deduction = (daily_rate * Decimal(str(absences))).quantize(Decimal("0.01"))
+
+        # Overtime pay
         overtime_pay = (per_hour_rate * overtime_hours * OVERTIME_RATE).quantize(Decimal("0.01"))
 
-        # Gross = base salary only (overtime is tracked separately in bonus column)
-        gross_salary = salary.quantize(Decimal("0.01"))
-
-        # Net = gross + bonus + allowance - deductions (floor at 0)
-        net_salary = max(Decimal("0"), gross_salary + overtime_pay - deduction).quantize(Decimal("0.01"))
-
-        # Upsert: if a payroll already exists for this employee/month/year, update it
+        # Check if a payroll record already exists for this employee/month/year
         existing = await database.fetch_one(
-            "SELECT id FROM payroll WHERE org_id = :org_id AND employee_id = :emp_id AND month = :month AND year = :year",
+            "SELECT id, bonus, allowance, deductions, notes, status FROM payroll WHERE org_id = :org_id AND employee_id = :emp_id AND month = :month AND year = :year",
             {"org_id": org_id, "emp_id": emp_id, "month": month, "year": year},
         )
+
+        # Use existing manual values if regenerating, otherwise default to 0
+        if existing:
+            existing_bonus = Decimal(str(existing["bonus"]))
+            existing_allowance = Decimal(str(existing["allowance"]))
+            existing_deductions = Decimal(str(existing["deductions"]))
+        else:
+            existing_bonus = Decimal("0")
+            existing_allowance = Decimal("0")
+            existing_deductions = Decimal("0")
+
+        # Gross = Basic Salary + Existing Bonus + Existing Allowance + Overtime Pay
+        gross_salary = (salary + existing_bonus + existing_allowance + overtime_pay).quantize(Decimal("0.01"))
+
+        # Net = Gross - Absence Deduction - Existing Manual Deductions
+        net_salary = max(Decimal("0"), gross_salary - absence_deduction - existing_deductions).quantize(Decimal("0.01"))
+
+        stored_absences = absences
 
         if existing:
             await database.execute(
@@ -208,7 +229,7 @@ async def generate_payroll(
                     overtime_hours = :overtime_hours,
                     bonus = :bonus, allowance = :allowance, deductions = :deductions,
                     gross_salary = :gross_salary, net_salary = :net_salary,
-                    status = 'pending',
+                    notes = :notes, status = :status,
                     updated_at = datetime('now')
                 WHERE id = :id AND org_id = :org_id
                 """,
@@ -216,16 +237,18 @@ async def generate_payroll(
                     "id": existing["id"],
                     "org_id": org_id,
                     "days_worked": days_worked,
-                    "absences": absences,
+                    "absences": stored_absences,
                     "overtime_hours": str(overtime_hours),
-                    "bonus": str(overtime_pay),
-                    "allowance": "0",
-                    "deductions": str(deduction),
+                    "bonus": str(existing_bonus),
+                    "allowance": str(existing_allowance),
+                    "deductions": str(existing_deductions),
                     "gross_salary": str(gross_salary),
                     "net_salary": str(net_salary),
+                    "notes": existing["notes"],
+                    "status": existing["status"],
                 },
             )
-            result = await _get_payroll(org_id, existing["id"])
+            result = await get_payroll(org_id, existing["id"])
             if result:
                 created.append(result)
         else:
@@ -249,17 +272,17 @@ async def generate_payroll(
                     "month": month,
                     "year": year,
                     "days_worked": days_worked,
-                    "absences": absences,
+                    "absences": stored_absences,
                     "overtime_hours": str(overtime_hours),
-                    "bonus": str(overtime_pay),
+                    "bonus": "0",
                     "allowance": "0",
-                    "deductions": str(deduction),
+                    "deductions": "0",
                     "gross_salary": str(gross_salary),
                     "net_salary": str(net_salary),
                 },
             )
             if result:
-                full = await _get_payroll(org_id, result["id"])
+                full = await get_payroll(org_id, result["id"])
                 if full:
                     created.append(full)
 
@@ -299,20 +322,20 @@ async def _calculate_data(
     weekdays = sum(1 for day in range(1, total_days + 1)
                    if date(year, month, day).weekday() < 5)
 
-    # If no attendance records exist at all, treat as full attendance (no data ≠ absent every day)
+    # If no attendance records exist at all, return None (caller should skip this employee)
     if not rows:
-        return {
-            "days_worked": weekdays,
-            "absences": 0,
-            "overtime_hours": Decimal("0"),
-        }
+        return None
 
     absent_days = 0
     total_overtime_minutes = 0
 
     attendance_map: dict[str, dict[str, Any]] = {}
     for row in rows:
-        d = row["attendance_date"].isoformat() if hasattr(row["attendance_date"], 'isoformat') else str(row["attendance_date"])
+        raw = row["attendance_date"]
+        if isinstance(raw, str):
+            d = raw[:10]
+        else:
+            d = raw.strftime("%Y-%m-%d") if hasattr(raw, "strftime") else str(raw)
         attendance_map[d] = {
             "status": row["status"],
             "check_in_time": row["check_in_time"],
@@ -344,6 +367,7 @@ async def _calculate_data(
         "days_worked": max(0, days_worked),
         "absences": max(0, absent_days),
         "overtime_hours": max(Decimal("0"), overtime_hours),
+        "weekdays": weekdays,
     }
 
 
@@ -363,7 +387,7 @@ async def update_payroll(
 ) -> dict[str, Any] | None:
     """Update a payroll record with the given values and return the updated record."""
     if not values:
-        return await _get_payroll(org_id, payroll_id)
+        return await get_payroll(org_id, payroll_id)
 
     # Always set updated_at explicitly (onupdate does not fire on raw UPDATE)
     set_items = []
@@ -383,7 +407,7 @@ async def update_payroll(
 
     await database.execute(query, params)
 
-    return await _get_payroll(org_id, payroll_id)
+    return await get_payroll(org_id, payroll_id)
 
 
 async def delete_payroll(org_id: int, payroll_id: int) -> None:
