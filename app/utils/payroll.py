@@ -298,6 +298,15 @@ async def _calculate_data(
     total_days = calendar.monthrange(year, month)[1]
     weekdays = sum(1 for day in range(1, total_days + 1)
                    if date(year, month, day).weekday() < 5)
+
+    # If no attendance records exist at all, treat as full attendance (no data ≠ absent every day)
+    if not rows:
+        return {
+            "days_worked": weekdays,
+            "absences": 0,
+            "overtime_hours": Decimal("0"),
+        }
+
     absent_days = 0
     total_overtime_minutes = 0
 
