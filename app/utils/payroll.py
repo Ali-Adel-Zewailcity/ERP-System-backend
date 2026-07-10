@@ -124,9 +124,12 @@ async def list_payroll(
     return [dict(r) for r in rows], total
 
 
-def _to_minutes(t: time | None) -> int:
+def _to_minutes(t: time | str | None) -> int:
     if t is None:
         return 0
+    if isinstance(t, str):
+        parts = t.split(":")
+        return int(parts[0]) * 60 + int(parts[1])
     return t.hour * 60 + t.minute
 
 
@@ -185,11 +188,11 @@ async def generate_payroll(
         # Overtime pay → bonus column
         overtime_pay = (per_hour_rate * overtime_hours * OVERTIME_RATE).quantize(Decimal("0.01"))
 
-        # Gross = salary + overtime (bonus)
-        gross_salary = (salary + overtime_pay).quantize(Decimal("0.01"))
+        # Gross = base salary only (overtime is tracked separately in bonus column)
+        gross_salary = salary.quantize(Decimal("0.01"))
 
-        # Net = gross - deductions
-        net_salary = (gross_salary - deduction).quantize(Decimal("0.01"))
+        # Net = gross + bonus + allowance - deductions (floor at 0)
+        net_salary = max(Decimal("0"), gross_salary + overtime_pay - deduction).quantize(Decimal("0.01"))
 
         # Upsert: if a payroll already exists for this employee/month/year, update it
         existing = await database.fetch_one(
@@ -270,21 +273,25 @@ async def _calculate_data(
     year: int,
 ) -> dict[str, Any]:
     """Calculate attendance-derived metrics for an employee in a given month."""
+    start_date = date(year, month, 1)
+    total_days_in_month = calendar.monthrange(year, month)[1]
+    end_date = date(year, month, total_days_in_month)
+
     rows = await database.fetch_all(
         """
         SELECT attendance_date, check_in_time, check_out_time, status
         FROM attendance
         WHERE employee_id = :employee_id
           AND org_id = :org_id
-          AND strftime('%m', attendance_date) = :month_str
-          AND strftime('%Y', attendance_date) = :year_str
+          AND attendance_date >= :start_date
+          AND attendance_date <= :end_date
         ORDER BY attendance_date
         """,
         {
             "employee_id": employee_id,
             "org_id": org_id,
-            "month_str": f"{month:02d}",
-            "year_str": str(year),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
         },
     )
 
@@ -321,13 +328,13 @@ async def _calculate_data(
         elif attendance_map[key]["status"] == "absent":
             absent_days += 1
 
-    overtime_hours = round(total_overtime_minutes / 60, 1)
+    overtime_hours = Decimal(str(round(total_overtime_minutes / 60, 1)))
     days_worked = weekdays - absent_days
 
     return {
         "days_worked": max(0, days_worked),
         "absences": max(0, absent_days),
-        "overtime_hours": max(0, overtime_hours),
+        "overtime_hours": max(Decimal("0"), overtime_hours),
     }
 
 
