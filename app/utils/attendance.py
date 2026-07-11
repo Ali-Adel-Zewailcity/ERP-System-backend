@@ -55,7 +55,7 @@ async def get_attendance(org_id: int, attendance_id: int) -> dict[str, Any] | No
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
                a.check_in_time, a.check_out_time, a.status, a.source, a.notes,
                a.created_at, a.updated_at,
-               e.full_name AS employee_name, e.department
+                e.full_name AS employee_name, e.employee_number, e.department
         FROM attendance a
         JOIN employees e ON a.employee_id = e.id
         WHERE a.id = :id AND a.org_id = :org_id
@@ -121,7 +121,7 @@ async def list_attendance(
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
                a.check_in_time, a.check_out_time, a.status, a.source, a.notes,
                a.created_at, a.updated_at,
-               e.full_name AS employee_name, e.department
+                e.full_name AS employee_name, e.employee_number, e.department
         FROM attendance a
         {join_clause}
         WHERE {where_clause}
@@ -204,7 +204,7 @@ async def list_all_attendance_for_org(
         SELECT a.id, a.org_id, a.employee_id, a.attendance_date,
                a.check_in_time, a.check_out_time, a.status, a.source, a.notes,
                a.created_at, a.updated_at,
-               e.full_name AS employee_name, e.department
+                e.full_name AS employee_name, e.employee_number, e.department
         FROM attendance a
         JOIN employees e ON a.employee_id = e.id
         WHERE {where_clause}
