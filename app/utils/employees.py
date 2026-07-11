@@ -7,7 +7,7 @@ without depending on FastAPI request objects.
 
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.db.database import database
 from app.schema.hr import employees
@@ -20,11 +20,11 @@ async def create_employee(
     email: str,
     salary: Decimal,
     hire_date: date,
-    phone_number: str | None = None,
-    job_title: str | None = None,
-    department: str | None = None,
+    phone_number: Optional[str] = None,
+    job_title: Optional[str] = None,
+    department: Optional[str] = None,
     status: str = "active",
-) -> dict[str, Any]:
+) -> Dict[str, Any]:
     """Insert a new employee and return the full record."""
     query = """
         INSERT INTO employees (org_id, full_name, employee_number, email,
@@ -52,7 +52,7 @@ async def create_employee(
     })
 
 
-async def get_employee(org_id: int, employee_id: int) -> dict[str, Any] | None:
+async def get_employee(org_id: int, employee_id: int) -> Optional[Dict[str, Any]]:
     """Fetch a single employee by ID scoped to the organization."""
     query = """
         SELECT id, org_id, full_name, employee_number, email,
@@ -74,14 +74,14 @@ SORTABLE_COLUMNS = frozenset({
 
 async def list_all_employees_for_org(
     org_id: int,
-    search: str | None = None,
-    department: str | None = None,
-    status: str | None = None,
-    hire_date_from: str | None = None,
-    hire_date_to: str | None = None,
+    search: Optional[str] = None,
+    department: Optional[str] = None,
+    status: Optional[str] = None,
+    hire_date_from: Optional[str] = None,
+    hire_date_to: Optional[str] = None,
     sort_by: str = "id",
     sort_order: str = "asc",
-) -> list[dict[str, Any]]:
+) -> List[Dict[str, Any]]:
     """Return ALL employees for an org (unpaginated) with optional filters."""
     conditions = ["org_id = :org_id"]
     params: dict[str, Any] = {"org_id": org_id}
@@ -133,14 +133,14 @@ async def list_employees(
     org_id: int,
     page: int = 1,
     page_size: int = 20,
-    search: str | None = None,
-    department: str | None = None,
-    status: str | None = None,
-    hire_date_from: str | None = None,
-    hire_date_to: str | None = None,
+    search: Optional[str] = None,
+    department: Optional[str] = None,
+    status: Optional[str] = None,
+    hire_date_from: Optional[str] = None,
+    hire_date_to: Optional[str] = None,
     sort_by: str = "id",
     sort_order: str = "asc",
-) -> tuple[list[dict[str, Any]], int]:
+) -> Tuple[List[Dict[str, Any]], int]:
     """
     Return a paginated, filtered list of employees and the total count.
 
@@ -207,7 +207,7 @@ async def list_employees(
 
 async def get_employee_stats(
     org_id: int,
-) -> dict[str, int]:
+) -> Dict[str, int]:
     """Return summary statistics for employees in the given organization."""
     query = """
         SELECT
@@ -230,8 +230,8 @@ async def get_employee_stats(
 async def update_employee(
     org_id: int,
     employee_id: int,
-    values: dict[str, Any],
-) -> dict[str, Any] | None:
+    values: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
     """Update an employee record and return the updated row, or None if not found."""
     if not values:
         return await get_employee(org_id, employee_id)
@@ -255,8 +255,8 @@ async def update_employee(
 async def update_employee_photo(
     org_id: int,
     employee_id: int,
-    photo_path: str | None,
-) -> dict[str, Any] | None:
+    photo_path: Optional[str],
+) -> Optional[Dict[str, Any]]:
     query = """
         UPDATE employees
         SET profile_photo_path = :photo_path

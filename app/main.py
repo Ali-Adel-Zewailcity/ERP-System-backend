@@ -58,9 +58,7 @@ app.include_router(hr.router)
 app.include_router(attendance.router)
 app.include_router(leave_requests.router)
 app.include_router(top_performance.router)
-app.include_router(sales.customer_router)
-app.include_router(sales.order_router)
-app.include_router(sales.return_router)
+app.include_router(payroll.router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────

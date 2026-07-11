@@ -140,7 +140,7 @@ async def generate_payroll_endpoint(
     if not created:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No employees found to generate payroll for.",
+            detail="No attendance data found for any employee in this period — cannot generate payroll. Please add attendance records first or create payroll manually.",
         )
 
     await log_activity(
@@ -229,16 +229,25 @@ async def update_payroll_by_id(
         current_bonus = Decimal(str(values.get("bonus", existing.get("bonus", 0))))
         current_allowance = Decimal(str(values.get("allowance", existing.get("allowance", 0))))
         current_deductions = Decimal(str(values.get("deductions", existing.get("deductions", 0))))
-        gross = Decimal(str(existing.get("gross_salary", 0)))
 
-        # new gross = old gross - old bonus + new bonus - old allowance + new allowance
-        # But that's complex. Simpler: retrieve the originally generated salary,
-        # then add manual adjustments on top.
-        # The gross_salary stored is the calculated one. Manual adjustments
-        # are added/subtracted to produce the effective net.
-        # net = gross + bonus - deductions
-        net = gross + current_bonus + current_allowance - current_deductions
-        values["net_salary"] = str(max(Decimal("0"), net.quantize(Decimal("0.01"))))
+        old_bonus = Decimal(str(existing.get("bonus", 0)))
+        old_allowance = Decimal(str(existing.get("allowance", 0)))
+        old_deductions = Decimal(str(existing.get("deductions", 0)))
+        old_gross = Decimal(str(existing.get("gross_salary", 0)))
+        old_net = Decimal(str(existing.get("net_salary", 0)))
+
+        # absence_deduction is invariant (determined by attendance data)
+        absence_deduction = old_gross - old_net - old_deductions
+
+        # Recalculate gross with new bonus/allowance replacing old ones
+        new_gross = old_gross - old_bonus - old_allowance + current_bonus + current_allowance
+        new_gross = new_gross.quantize(Decimal("0.01"))
+
+        # Recalculate net
+        new_net = max(Decimal("0"), new_gross - absence_deduction - current_deductions).quantize(Decimal("0.01"))
+
+        values["gross_salary"] = str(new_gross)
+        values["net_salary"] = str(new_net)
 
     updated = await _update_payroll(
         org_id=current_user.org_id,

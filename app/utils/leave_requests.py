@@ -46,7 +46,7 @@ async def get_leave(org_id: int, leave_id: int) -> dict[str, Any] | None:
                lr.leave_type, lr.start_date, lr.end_date,
                lr.total_days, lr.reason, lr.status,
                lr.requested_at, lr.resolved_at,
-               e.full_name AS employee_name, e.department,
+               e.full_name AS employee_name, e.employee_number, e.department,
                au.username AS approver_name
         FROM leave_requests lr
         JOIN employees e ON lr.employee_id = e.id
@@ -121,7 +121,7 @@ async def list_leaves(
                lr.leave_type, lr.start_date, lr.end_date,
                lr.total_days, lr.reason, lr.status,
                lr.requested_at, lr.resolved_at,
-               e.full_name AS employee_name, e.department,
+               e.full_name AS employee_name, e.employee_number, e.department,
                au.username AS approver_name
         FROM leave_requests lr
         JOIN employees e ON lr.employee_id = e.id
@@ -187,7 +187,7 @@ async def list_all_leaves_for_org(
                lr.leave_type, lr.start_date, lr.end_date,
                lr.total_days, lr.reason, lr.status,
                lr.requested_at, lr.resolved_at,
-               e.full_name AS employee_name, e.department,
+               e.full_name AS employee_name, e.employee_number, e.department,
                au.username AS approver_name
         FROM leave_requests lr
         JOIN employees e ON lr.employee_id = e.id
