@@ -282,6 +282,7 @@ class AttendanceResponse(BaseModel):
     id: int
     employee_id: int
     employee_name: str | None = None
+    employee_number: str | None = None
     department: str | None = None
     org_id: int
     attendance_date: date
@@ -397,6 +398,7 @@ class LeaveResponse(BaseModel):
     id: int
     employee_id: int
     employee_name: str | None = None
+    employee_number: str | None = None
     department: str | None = None
     approved_by: int | None = None
     approver_name: str | None = None
@@ -504,6 +506,8 @@ class PayrollResponse(BaseModel):
     org_id: int
     employee_id: int
     employee_name: str | None = None
+    employee_number: str | None = None
+    job_title: str | None = None
     department: str | None = None
     basic_salary: Decimal | None = None
     month: int
