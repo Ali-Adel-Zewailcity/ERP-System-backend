@@ -131,5 +131,17 @@ return_items = sa.Table(
     sa.Column("product_id", sa.Integer, sa.ForeignKey("products.id", ondelete="RESTRICT"),
               nullable=False),
     sa.Column("quantity",   sa.Integer, nullable=False),
+    sa.Column("inspection_status", sa.String(10), nullable=True,
+              comment="pass = قابل للبيع, fail = تالف"),
+    sa.Column("refund_method",    sa.String(20), nullable=True,
+              comment="cash, bank_transfer, credit_note, replace"),
     sa.CheckConstraint("quantity > 0", name="ck_return_items_quantity_positive"),
+    sa.CheckConstraint(
+        "inspection_status IS NULL OR inspection_status IN ('pass','fail')",
+        name="ck_return_items_inspection_status",
+    ),
+    sa.CheckConstraint(
+        "refund_method IS NULL OR refund_method IN ('cash','bank_transfer','credit_note','replace')",
+        name="ck_return_items_refund_method",
+    ),
 )
