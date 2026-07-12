@@ -13,11 +13,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.db.database import database
-from app.routers import auth, user, rbac, organization, hr, attendance, leave_requests, top_performance, payroll, sales
+from app.routers import (
+    auth,
+    user,
+    rbac,
+    organization,
+    hr,
+    attendance,
+    leave_requests,
+    top_performance,
+    payroll,
+    sales,
+    inventory,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Lifespan  (startup / shutdown)
+# Lifespan (startup / shutdown)
 # ─────────────────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -48,7 +60,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # Routers
 app.include_router(auth.router)
 app.include_router(rbac.router)
@@ -59,9 +70,11 @@ app.include_router(attendance.router)
 app.include_router(leave_requests.router)
 app.include_router(top_performance.router)
 app.include_router(payroll.router)
+app.include_router(sales.router)
+app.include_router(inventory.router)
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
+# ── Health check ─────────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"])
 async def health_check() -> dict:
     """Lightweight liveness probe."""
