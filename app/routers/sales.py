@@ -892,3 +892,12 @@ async def _get_return_with_items(org_id: int, return_id: int) -> dict[str, Any] 
     record["items"] = [dict(i) for i in items]
 
     return record
+ 
+router = APIRouter()
+
+router.include_router(customer_router)
+router.include_router(order_router)
+router.include_router(return_router)
+
+
+
