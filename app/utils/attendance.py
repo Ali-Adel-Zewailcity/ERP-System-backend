@@ -150,7 +150,7 @@ async def update_attendance(
 
     query = f"""
         UPDATE attendance
-        SET {set_clause}
+        SET {set_clause}, updated_at = datetime('now')
         WHERE id = :id AND org_id = :org_id
         RETURNING id, org_id, employee_id, attendance_date,
                   check_in_time, check_out_time, status, source, notes,

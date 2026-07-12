@@ -217,10 +217,8 @@ async def export_attendance(
     require_table_access(current_user, "attendance")
 
     if scope == "filtered":
-        rows, _ = await list_attendance(
+        rows = await list_all_attendance_for_org(
             org_id=current_user.org_id,
-            page=page,
-            page_size=page_size,
             search=search,
             status=status_param,
             attendance_date_from=attendance_date_from.isoformat() if attendance_date_from else None,
@@ -331,12 +329,19 @@ async def import_attendance(
     if not rows:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No data found in file.")
 
-    # Build a lookup of employee name → employee_id for this org
+    # Build lookups for employee identification
     employees_lookup = await database.fetch_all(
-        "SELECT id, full_name FROM employees WHERE org_id = :org_id",
+        "SELECT id, full_name, employee_number FROM employees WHERE org_id = :org_id",
         {"org_id": current_user.org_id},
     )
-    name_to_id = {r["full_name"].strip().lower(): r["id"] for r in employees_lookup}
+    number_to_id: dict[str, int] = {}
+    name_to_ids: dict[str, list[int]] = {}
+    for r in employees_lookup:
+        en = r.get("employee_number")
+        if en:
+            number_to_id[en.strip().lower()] = r["id"]
+        fn = r["full_name"].strip().lower()
+        name_to_ids.setdefault(fn, []).append(r["id"])
 
     errors = []
     imported = 0
@@ -344,12 +349,27 @@ async def import_attendance(
     for i, row in enumerate(rows, start=1):
         row_errors = []
         emp_name = (row.get("employee_name") or "").strip()
-        emp_id = name_to_id.get(emp_name.lower())
+        emp_number = (row.get("employee_number") or "").strip()
+        emp_id = None
 
-        if not emp_name:
+        if not emp_name and not emp_number:
             row_errors.append("employee_name is required.")
-        elif not emp_id:
-            row_errors.append(f"Employee '{emp_name}' not found in your organization.")
+        else:
+            if emp_number:
+                emp_id = number_to_id.get(emp_number.strip().lower())
+                if not emp_id:
+                    row_errors.append(f"Employee number '{emp_number}' not found in your organization.")
+            else:
+                matched_ids = name_to_ids.get(emp_name.lower())
+                if matched_ids is None:
+                    row_errors.append(f"Employee '{emp_name}' not found in your organization.")
+                elif len(matched_ids) > 1:
+                    row_errors.append(
+                        f"Multiple employees found with name '{emp_name}'. "
+                        "Please specify employee_number to resolve the ambiguity."
+                    )
+                else:
+                    emp_id = matched_ids[0]
 
         raw_date = row.get("attendance_date")
         if not raw_date:
@@ -368,6 +388,18 @@ async def import_attendance(
 
         check_in = row.get("check_in_time") or None
         check_out = row.get("check_out_time") or None
+
+        # Pre-check for duplicate attendance record
+        duplicate_check = await database.fetch_one(
+            "SELECT id FROM attendance WHERE employee_id = :employee_id AND attendance_date = :attendance_date",
+            {"employee_id": emp_id, "attendance_date": raw_date},
+        )
+        if duplicate_check:
+            errors.append({
+                "row": i,
+                "reasons": f"Attendance already exists for this employee on {raw_date}.",
+            })
+            continue
 
         try:
             from datetime import time
@@ -506,6 +538,30 @@ async def delete_attendance_by_id(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Attendance record not found.",
+        )
+
+    # Check if payroll has already been generated for this period
+    att_date = existing["attendance_date"]
+    if isinstance(att_date, str):
+        parts = att_date.split("-")
+        month = int(parts[1])
+        year = int(parts[0])
+    else:
+        month = att_date.month
+        year = att_date.year
+    payroll_exists = await database.fetch_one(
+        "SELECT id FROM payroll WHERE employee_id = :employee_id AND month = :month AND year = :year AND org_id = :org_id",
+        {
+            "employee_id": existing["employee_id"],
+            "month": month,
+            "year": year,
+            "org_id": current_user.org_id,
+        },
+    )
+    if payroll_exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Attendance cannot be deleted because payroll has already been generated for this period.",
         )
 
     await delete_attendance(current_user.org_id, attendance_id)

@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.utils.phone import mobile_registry
 
@@ -235,6 +235,13 @@ class AttendanceCreate(BaseModel):
     status: AttendanceStatusLiteral
     notes: str | None = None
 
+    @model_validator(mode="after")
+    def check_times(self):
+        if self.check_in_time is not None and self.check_out_time is not None:
+            if self.check_out_time <= self.check_in_time:
+                raise ValueError("check_out_time must be later than check_in_time.")
+        return self
+
 
 class AttendanceUpdate(BaseModel):
     """Request model for updating an attendance record. All fields are optional."""
@@ -254,6 +261,13 @@ class AttendanceUpdate(BaseModel):
     check_out_time: time | None = None
     status: AttendanceStatusLiteral | None = None
     notes: str | None = None
+
+    @model_validator(mode="after")
+    def check_times(self):
+        if self.check_in_time is not None and self.check_out_time is not None:
+            if self.check_out_time <= self.check_in_time:
+                raise ValueError("check_out_time must be later than check_in_time.")
+        return self
 
 
 class AttendanceResponse(BaseModel):
