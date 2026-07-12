@@ -11,6 +11,7 @@ Endpoints
 from datetime import datetime
 from decimal import Decimal
 from typing import Annotated, Any
+from sqlalchemy import func, select
 from fastapi import APIRouter, Depends, HTTPException, status, Path, Query
 
 from app.db.database import database
@@ -19,6 +20,7 @@ from app.models.sales import (
     CustomerCreate,
     CustomerUpdate,
     CustomerResponse,
+    CustomerListResponse,
     SalesOrderCreate,
     SalesOrderUpdate,
     SalesOrderResponse,
@@ -92,16 +94,18 @@ async def create_customer(
 
 @customer_router.get(
     "/",
-    response_model=list[CustomerResponse],
+    response_model=CustomerListResponse,
     summary="List Customers",
-    description="Returns a list of customers scoped to the current user's organization.",
+    description="Returns a paginated list of customers scoped to the current user's organization.",
 )
 async def list_customers(
     current_user: Annotated[UserResponse, Depends(require_organization_member)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 20,
     search: Annotated[str | None, Query(max_length=100)] = None,
     is_active: Annotated[bool | None, Query()] = None,
-) -> list[CustomerResponse]:
-    """List customers with optional search and active filter."""
+) -> CustomerListResponse:
+    """List customers with pagination and optional filters."""
     require_table_access(current_user, "customers")
 
     conditions = [customers_table.c.org_id == current_user.org_id]
@@ -110,13 +114,29 @@ async def list_customers(
     if is_active is not None:
         conditions.append(customers_table.c.is_active == is_active)
 
+    subq = customers_table.select().with_only_columns(customers_table.c.id).where(*conditions).subquery()
+    total = await database.fetch_val(select(func.count()).select_from(subq)) or 0
+
+    offset = (page - 1) * page_size
     query = (
         customers_table.select()
         .where(*conditions)
         .order_by(customers_table.c.name.asc())
+        .limit(page_size)
+        .offset(offset)
     )
     rows = await database.fetch_all(query)
-    return [CustomerResponse.model_validate(r) for r in rows]
+    items = [CustomerResponse.model_validate(r) for r in rows]
+
+    pages = (total + page_size - 1) // page_size if total else 0
+
+    return CustomerListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
 
 
 @customer_router.get(
@@ -353,14 +373,8 @@ async def list_sales_orders(
     if customer_id:
         conditions.append(sales_orders_table.c.customer_id == customer_id)
 
-    count_query = (
-        sales_orders_table.select()
-        .with_only_columns(sales_orders_table.c.id)
-        .where(*conditions)
-    )
-    total = await database.fetch_val(
-        count_query.alias("subq").count().select()
-    ) or 0
+    subq = sales_orders_table.select().with_only_columns(sales_orders_table.c.id).where(*conditions).subquery()
+    total = await database.fetch_val(select(func.count()).select_from(subq)) or 0
 
     offset = (page - 1) * page_size
     query = (
@@ -681,14 +695,8 @@ async def list_returns(
     if status:
         conditions.append(returns_table.c.status == status)
 
-    count_query = (
-        returns_table.select()
-        .with_only_columns(returns_table.c.id)
-        .where(*conditions)
-    )
-    total = await database.fetch_val(
-        count_query.alias("subq").count().select()
-    ) or 0
+    subq = returns_table.select().with_only_columns(returns_table.c.id).where(*conditions).subquery()
+    total = await database.fetch_val(select(func.count()).select_from(subq)) or 0
 
     offset = (page - 1) * page_size
     query = (

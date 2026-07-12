@@ -59,6 +59,9 @@ app.include_router(attendance.router)
 app.include_router(leave_requests.router)
 app.include_router(top_performance.router)
 app.include_router(payroll.router)
+app.include_router(sales.customer_router)
+app.include_router(sales.order_router)
+app.include_router(sales.return_router)
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -71,3 +74,4 @@ async def health_check() -> dict:
         "version": settings.APP_VERSION,
         "env": settings.APP_ENV,
     }
+

@@ -196,6 +196,14 @@ class SalesOrderResponse(BaseModel):
     items: list[SalesOrderItemResponse] = []
 
 
+class CustomerListResponse(BaseModel):
+    items: list[CustomerResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
 class SalesOrderListResponse(BaseModel):
     items: list[SalesOrderResponse]
     total: int
