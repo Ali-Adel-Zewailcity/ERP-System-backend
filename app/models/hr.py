@@ -319,6 +319,15 @@ class AttendanceListResponse(BaseModel):
     pages: int
 
 
+class AttendanceStatsResponse(BaseModel):
+    """Summary statistics for the attendance dashboard cards."""
+
+    present_today: int
+    absent_today: int
+    late_today: int
+    this_month: int
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Leave Requests
 # ─────────────────────────────────────────────────────────────────────────────

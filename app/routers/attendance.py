@@ -25,6 +25,7 @@ from app.models.hr import (
     AttendanceUpdate,
     AttendanceResponse,
     AttendanceListResponse,
+    AttendanceStatsResponse,
     ImportSummary,
 )
 from app.utils.dependency import require_organization_member
@@ -34,6 +35,9 @@ from app.utils.attendance import (
     get_attendance,
     list_attendance,
     list_all_attendance_for_org,
+    get_attendance_stats,
+    bulk_delete_attendance,
+    bulk_update_attendance_status,
     update_attendance,
     delete_attendance,
     SORTABLE_COLUMNS,
@@ -162,6 +166,26 @@ async def list_all_attendance(
         page_size=page_size,
         pages=pages,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Statistics
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.get(
+    "/stats",
+    response_model=AttendanceStatsResponse,
+    summary="Attendance Statistics",
+    description="Returns summary statistics (present/absent/late today, total this month) for the dashboard cards.",
+)
+async def attendance_stats(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+) -> AttendanceStatsResponse:
+    """Return attendance statistics for the organization."""
+    require_table_access(current_user, "attendance")
+    stats = await get_attendance_stats(current_user.org_id)
+    return AttendanceStatsResponse(**stats)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -337,7 +361,7 @@ async def import_attendance(
     number_to_id: dict[str, int] = {}
     name_to_ids: dict[str, list[int]] = {}
     for r in employees_lookup:
-        en = r.get("employee_number")
+        en = r["employee_number"]
         if en:
             number_to_id[en.strip().lower()] = r["id"]
         fn = r["full_name"].strip().lower()
@@ -429,6 +453,67 @@ async def import_attendance(
         failed=len(rows) - imported,
         errors=errors,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bulk operations (filter-based)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.delete(
+    "/bulk",
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Delete Attendance",
+    description="Delete attendance records matching the current filter criteria. Supports same filters as list endpoint.",
+)
+async def bulk_delete_attendance_endpoint(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    department: Annotated[str | None, Query(max_length=100)] = None,
+    status: Annotated[str | None, Query(pattern="^(present|absent|late|leave|holiday)?$")] = None,
+    attendance_date_from: Annotated[str | None, Query()] = None,
+    attendance_date_to: Annotated[str | None, Query()] = None,
+) -> dict[str, Any]:
+    """Delete all attendance records matching the specified filter criteria."""
+    require_write_access(current_user, "attendance")
+    deleted = await bulk_delete_attendance(
+        org_id=current_user.org_id,
+        search=search,
+        department=department,
+        status=status,
+        attendance_date_from=attendance_date_from,
+        attendance_date_to=attendance_date_to,
+    )
+    return {"deleted": deleted}
+
+
+@router.post(
+    "/bulk-status",
+    status_code=status.HTTP_200_OK,
+    summary="Bulk Status Change",
+    description="Update status of attendance records matching the filter criteria.",
+)
+async def bulk_update_status_endpoint(
+    current_user: Annotated[UserResponse, Depends(require_organization_member)],
+    new_status: Annotated[str, Query(pattern="^(present|absent|late|leave|holiday)$")],
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    department: Annotated[str | None, Query(max_length=100)] = None,
+    status: Annotated[str | None, Query(pattern="^(present|absent|late|leave|holiday)?$")] = None,
+    attendance_date_from: Annotated[str | None, Query()] = None,
+    attendance_date_to: Annotated[str | None, Query()] = None,
+) -> dict[str, Any]:
+    """Update status of all attendance records matching the specified filter criteria."""
+    require_write_access(current_user, "attendance")
+    updated = await bulk_update_attendance_status(
+        org_id=current_user.org_id,
+        new_status=new_status,
+        search=search,
+        department=department,
+        current_status=status,
+        attendance_date_from=attendance_date_from,
+        attendance_date_to=attendance_date_to,
+    )
+    return {"updated": updated}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

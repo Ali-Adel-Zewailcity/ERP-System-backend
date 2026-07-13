@@ -214,6 +214,140 @@ async def list_all_attendance_for_org(
     return [dict(r) for r in rows]
 
 
+async def get_attendance_stats(org_id: int) -> dict[str, int]:
+    """Return summary statistics for the attendance dashboard cards.
+
+    Returns:
+        present_today — count of records with status='present' and date=today
+        absent_today  — count of records with status='absent'  and date=today
+        late_today    — count of records with status='late'    and date=today
+        this_month    — total attendance records in the current calendar month
+    """
+    today = date.today()
+    month_start = today.replace(day=1)
+
+    # Calculate next month's start for the month range
+    if month_start.month == 12:
+        month_end = month_start.replace(year=month_start.year + 1, month=1)
+    else:
+        month_end = month_start.replace(month=month_start.month + 1)
+
+    today_str = today.isoformat()
+    month_start_str = month_start.isoformat()
+    month_end_str = month_end.isoformat()
+
+    present_today = await database.fetch_val(
+        "SELECT COUNT(*) FROM attendance WHERE org_id = :org_id AND attendance_date = :today AND status = 'present'",
+        {"org_id": org_id, "today": today_str},
+    ) or 0
+
+    absent_today = await database.fetch_val(
+        "SELECT COUNT(*) FROM attendance WHERE org_id = :org_id AND attendance_date = :today AND status = 'absent'",
+        {"org_id": org_id, "today": today_str},
+    ) or 0
+
+    late_today = await database.fetch_val(
+        "SELECT COUNT(*) FROM attendance WHERE org_id = :org_id AND attendance_date = :today AND status = 'late'",
+        {"org_id": org_id, "today": today_str},
+    ) or 0
+
+    this_month = await database.fetch_val(
+        "SELECT COUNT(*) FROM attendance WHERE org_id = :org_id AND attendance_date >= :start AND attendance_date < :end",
+        {"org_id": org_id, "start": month_start_str, "end": month_end_str},
+    ) or 0
+
+    return {
+        "present_today": present_today,
+        "absent_today": absent_today,
+        "late_today": late_today,
+        "this_month": this_month,
+    }
+
+
+async def bulk_delete_attendance(
+    org_id: int,
+    search: str | None = None,
+    department: str | None = None,
+    status: str | None = None,
+    attendance_date_from: str | None = None,
+    attendance_date_to: str | None = None,
+) -> int:
+    """Delete attendance records matching the given filters. Returns count deleted."""
+    conditions = ["a.org_id = :org_id"]
+    params: dict[str, Any] = {"org_id": org_id}
+
+    if search:
+        conditions.append("e.full_name LIKE :search")
+        params["search"] = f"%{search}%"
+    if department:
+        conditions.append("e.department = :department")
+        params["department"] = department
+    if status:
+        conditions.append("a.status = :status")
+        params["status"] = status
+    if attendance_date_from:
+        conditions.append("a.attendance_date >= :attendance_date_from")
+        params["attendance_date_from"] = attendance_date_from
+    if attendance_date_to:
+        conditions.append("a.attendance_date <= :attendance_date_to")
+        params["attendance_date_to"] = attendance_date_to
+
+    where_clause = " AND ".join(conditions)
+    query = f"""
+        DELETE FROM attendance
+        WHERE id IN (
+            SELECT a.id FROM attendance a
+            JOIN employees e ON a.employee_id = e.id
+            WHERE {where_clause}
+        )
+    """
+    result = await database.execute(query, params)
+    return result
+
+
+async def bulk_update_attendance_status(
+    org_id: int,
+    new_status: str,
+    search: str | None = None,
+    department: str | None = None,
+    current_status: str | None = None,
+    attendance_date_from: str | None = None,
+    attendance_date_to: str | None = None,
+) -> int:
+    """Update status of attendance records matching the given filters. Returns count updated."""
+    conditions = ["a.org_id = :org_id"]
+    params: dict[str, Any] = {"org_id": org_id, "new_status": new_status}
+
+    if search:
+        conditions.append("e.full_name LIKE :search")
+        params["search"] = f"%{search}%"
+    if department:
+        conditions.append("e.department = :department")
+        params["department"] = department
+    if current_status:
+        conditions.append("a.status = :status")
+        params["status"] = current_status
+    if attendance_date_from:
+        conditions.append("a.attendance_date >= :attendance_date_from")
+        params["attendance_date_from"] = attendance_date_from
+    if attendance_date_to:
+        conditions.append("a.attendance_date <= :attendance_date_to")
+        params["attendance_date_to"] = attendance_date_to
+
+    where_clause = " AND ".join(conditions)
+    query = f"""
+        UPDATE attendance
+        SET status = :new_status, updated_at = datetime('now')
+        WHERE id IN (
+            SELECT a.id FROM attendance a
+            JOIN employees e ON a.employee_id = e.id
+            WHERE {where_clause}
+        )
+    """
+    result = await database.execute(query, params)
+    return result
+
+
 async def delete_attendance(org_id: int, attendance_id: int) -> bool:
     """Delete an attendance record. Returns True if a row was deleted."""
     query = "DELETE FROM attendance WHERE id = :id AND org_id = :org_id"

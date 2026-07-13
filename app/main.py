@@ -21,7 +21,6 @@ from app.routers import (
     hr,
     attendance,
     leave_requests,
-    top_performance,
     payroll,
     sales,
     inventory,
@@ -68,7 +67,6 @@ app.include_router(user.router)
 app.include_router(hr.router)
 app.include_router(attendance.router)
 app.include_router(leave_requests.router)
-app.include_router(top_performance.router)
 app.include_router(payroll.router)
 
 app.include_router(sales.customer_router)

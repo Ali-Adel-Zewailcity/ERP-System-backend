@@ -344,17 +344,16 @@ async def _calculate_data(
         {
             "employee_id": employee_id,
             "org_id": org_id,
-            "start_date": effective_start.isoformat(),
-            "end_date": effective_end.isoformat(),
+            "start_date": start_date.isoformat(),
+            "end_date": end_date.isoformat(),
         },
     )
 
-    # Working days within bounded range (excluding Fri/Sat)
+    # Span of the employee's eligible date range (hire_date to today)
     span = (effective_end - effective_start).days + 1
-    weekdays = sum(
-        1 for offset in range(span)
-        if (effective_start + timedelta(days=offset)).weekday() not in (4, 5)
-    )
+
+    # Total calendar days in the month — used as the daily-rate denominator
+    weekdays = total_days_in_month
 
     if not rows:
         return None
@@ -376,25 +375,29 @@ async def _calculate_data(
     absent_days = 0
     total_overtime_minutes = 0
 
+    present_statuses = {"present", "late", "leave", "holiday"}
+
+    for key, att in attendance_map.items():
+        att_date = date.fromisoformat(key[:10])
+        if att_date > today or att_date < effective_start:
+            continue
+        status = att["status"]
+        if status in present_statuses:
+            present_days += 1
+            if status == "present":
+                cin = att["check_in_time"]
+                cout = att["check_out_time"]
+                if cin and cout:
+                    worked_mins = _to_minutes(cout) - _to_minutes(cin)
+                    if worked_mins > 8 * 60:
+                        total_overtime_minutes += worked_mins - 8 * 60
+
     for offset in range(span):
         d = effective_start + timedelta(days=offset)
         if d.weekday() in (4, 5):
             continue
         key = d.isoformat()
-        if key in attendance_map:
-            status = attendance_map[key]["status"]
-            if status in ("present", "late", "leave", "holiday"):
-                present_days += 1
-                if status == "present":
-                    cin = attendance_map[key]["check_in_time"]
-                    cout = attendance_map[key]["check_out_time"]
-                    if cin and cout:
-                        worked_mins = _to_minutes(cout) - _to_minutes(cin)
-                        if worked_mins > 8 * 60:
-                            total_overtime_minutes += worked_mins - 8 * 60
-            else:
-                absent_days += 1
-        else:
+        if key not in attendance_map or attendance_map[key]["status"] not in present_statuses:
             absent_days += 1
 
     overtime_hours = Decimal(str(round(total_overtime_minutes / 60, 1)))
