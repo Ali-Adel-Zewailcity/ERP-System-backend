@@ -549,3 +549,42 @@ class PayrollListResponse(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Top Performance
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class TopPerformanceItem(BaseModel):
+    """Performance summary for one employee in a given month."""
+
+    employee_id: int
+    employee_name: str
+    department: str | None = None
+    attendance_rate: float
+    late_count: int
+    leave_days_used: int
+    perfect_attendance: bool
+
+
+class TopPerformanceStats(BaseModel):
+    """Aggregated stats for the performance dashboard cards."""
+
+    top_performer_name: str | None = None
+    top_performer_rate: float | None = None
+    avg_attendance_rate: float = 0.0
+    perfect_attendance_count: int = 0
+    most_late_name: str | None = None
+    most_late_count: int = 0
+
+
+class TopPerformanceResponse(BaseModel):
+    """Response for /top-performance containing per-employee results + aggregate stats."""
+
+    items: list[TopPerformanceItem]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+    stats: TopPerformanceStats

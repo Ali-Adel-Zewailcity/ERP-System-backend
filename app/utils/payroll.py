@@ -6,7 +6,7 @@ without depending on FastAPI request objects.
 """
 
 import calendar
-from datetime import date, time
+from datetime import date, time, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -177,7 +177,7 @@ async def generate_payroll(
         salary = Decimal(str(emp["salary"]))
 
         # Calculate attendance-derived data (also returns weekdays)
-        att_data = await _calculate_data(org_id, emp_id, month, year)
+        att_data = await _calculate_data(org_id, emp_id, month, year, emp)
 
         # Skip employees with no attendance records for this period
         if att_data is None:
@@ -294,16 +294,42 @@ async def _calculate_data(
     employee_id: int,
     month: int,
     year: int,
-) -> dict[str, Any]:
+    emp: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Calculate attendance-derived metrics for an employee in a given month.
 
-    Working days are weekdays excluding Friday and Saturday.
+    Working days are bounded by the employee's hire_date and today's date,
+    so pre-hire and future days are never counted as absent.
+
     Present = attendance with status 'present', 'late', 'leave', or 'holiday'.
     Absent = status 'absent' or no attendance record on a working day.
     """
     start_date = date(year, month, 1)
     total_days_in_month = calendar.monthrange(year, month)[1]
     end_date = date(year, month, total_days_in_month)
+
+    # Bounded date range — exclude pre-hire and future days
+    emp_dict = dict(emp) if emp else {}
+    if emp_dict.get("hire_date"):
+        hire_raw = emp_dict["hire_date"]
+        hire_date = date.fromisoformat(hire_raw) if isinstance(hire_raw, str) else hire_raw
+    else:
+        row = await database.fetch_one(
+            "SELECT hire_date FROM employees WHERE id = :id AND org_id = :org_id",
+            {"id": employee_id, "org_id": org_id},
+        )
+        if not row:
+            return None
+        hire_date = row["hire_date"]
+        if isinstance(hire_date, str):
+            hire_date = date.fromisoformat(hire_date)
+
+    today = date.today()
+    effective_start = max(hire_date, start_date)
+    effective_end = min(today, end_date)
+
+    if effective_start > effective_end:
+        return None
 
     rows = await database.fetch_all(
         """
@@ -318,17 +344,18 @@ async def _calculate_data(
         {
             "employee_id": employee_id,
             "org_id": org_id,
-            "start_date": start_date.isoformat(),
-            "end_date": end_date.isoformat(),
+            "start_date": effective_start.isoformat(),
+            "end_date": effective_end.isoformat(),
         },
     )
 
-    total_days = calendar.monthrange(year, month)[1]
-    # Working days = all days except Friday (weekday=4) and Saturday (weekday=5)
-    weekdays = sum(1 for day in range(1, total_days + 1)
-                   if date(year, month, day).weekday() not in (4, 5))
+    # Working days within bounded range (excluding Fri/Sat)
+    span = (effective_end - effective_start).days + 1
+    weekdays = sum(
+        1 for offset in range(span)
+        if (effective_start + timedelta(days=offset)).weekday() not in (4, 5)
+    )
 
-    # If no attendance records exist at all, return None (caller should skip this employee)
     if not rows:
         return None
 
@@ -349,8 +376,8 @@ async def _calculate_data(
     absent_days = 0
     total_overtime_minutes = 0
 
-    for day in range(1, total_days + 1):
-        d = date(year, month, day)
+    for offset in range(span):
+        d = effective_start + timedelta(days=offset)
         if d.weekday() in (4, 5):
             continue
         key = d.isoformat()
