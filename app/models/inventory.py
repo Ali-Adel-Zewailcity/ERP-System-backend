@@ -27,7 +27,7 @@ class CategoryUpdate(BaseModel):
 
 
 class CategoryResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: int
     org_id: int
@@ -86,7 +86,7 @@ class ProductUpdate(BaseModel):
 
 
 class ProductResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: int
     org_id: int
@@ -158,7 +158,7 @@ class StockAdjustRequest(BaseModel):
 
 
 class StockResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: int
     product_id: int
@@ -229,8 +229,7 @@ class SupplierUpdate(BaseModel):
 
 
 class SupplierResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
     id: int
     org_id: int
     name: str
@@ -294,7 +293,7 @@ class SupplierProductUpdate(BaseModel):
 
 
 class SupplierProductResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     supplier_id: int
     product_id: int
@@ -342,7 +341,7 @@ class PurchaseOrderItemUpdate(BaseModel):
 
 
 class PurchaseOrderItemResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
 
     id: int
     order_id: int
@@ -367,8 +366,7 @@ class PurchaseOrderUpdate(BaseModel):
 
 
 class PurchaseOrderResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+    model_config = ConfigDict(from_attributes=True, extra="ignore")
     id: int
     org_id: int
     supplier_id: int

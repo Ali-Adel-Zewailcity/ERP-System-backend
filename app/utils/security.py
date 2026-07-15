@@ -39,7 +39,7 @@ async def authenticate_user(username: str, password: str) -> UserResponse | bool
     if not verify_password(password, user_record.password_hash):
         return False
 
-    return UserResponse.model_validate(user_record)
+    return UserResponse.model_validate(dict(user_record._mapping))
 
 
 def create_jwt_token(user: UserResponse) -> str:

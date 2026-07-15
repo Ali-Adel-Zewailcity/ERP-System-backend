@@ -37,7 +37,11 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> Use
         id: str = payload.get("sub")
         if id is None:
             raise credentials_exception
-
+        
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token payload")
+        
     except ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -47,13 +51,14 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> Use
     except InvalidTokenError:
         raise credentials_exception
 
-    query = sa.select(users).where(users.c.id == id)
+    query = sa.select(users).where(users.c.id == int(user_id))
     user_record = await database.fetch_one(query)
 
     if user_record is None:
         raise credentials_exception
 
-    user = UserResponse.model_validate(user_record)
+    user = UserResponse.model_validate(dict(user_record._mapping))
+    # user = UserResponse.model_validate(dict(user_record._mapping))
 
     if not user.is_active:
         raise HTTPException(

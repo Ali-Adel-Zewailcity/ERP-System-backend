@@ -162,7 +162,6 @@ async def delete_category(org_id: int, category_id: int) -> bool:
     result = await database.execute(query, {"id": category_id, "org_id": org_id})
     return bool(result)
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Products
 # ─────────────────────────────────────────────────────────────────────────────
@@ -174,8 +173,13 @@ PRODUCT_SORTABLE = frozenset({
 
 async def _ensure_stock_row(product_id: int) -> None:
     """Ensure a 1:1 inventory_stock row exists for a product."""
+    # تعديل الصيغة لتتوافق مع PostgreSQL بدلاً من SQLite
     await database.execute(
-        "INSERT OR IGNORE INTO inventory_stock (product_id) VALUES (:product_id)",
+        """
+        INSERT INTO inventory_stock (product_id) 
+        VALUES (:product_id)
+        ON CONFLICT (product_id) DO NOTHING
+        """,
         {"product_id": product_id},
     )
 
@@ -281,19 +285,20 @@ async def list_products(
 
 
 async def get_product_stats(org_id: int) -> dict[str, Any]:
+    # تم تعديل مقارنة الـ is_active لتتوافق مع Boolean (TRUE / FALSE)
     query = """
         SELECT
-            COUNT(*)                                                       AS total,
-            SUM(CASE WHEN products.is_active = 1 THEN 1 ELSE 0 END)       AS active,
-            SUM(CASE WHEN products.is_active = 0 THEN 1 ELSE 0 END)       AS inactive,
+            COUNT(*)                                                              AS total,
+            SUM(CASE WHEN products.is_active = TRUE THEN 1 ELSE 0 END)            AS active,
+            SUM(CASE WHEN products.is_active = FALSE THEN 1 ELSE 0 END)           AS inactive,
             SUM(CASE WHEN COALESCE(inventory_stock.quantity_available, 0)
                           <= COALESCE(inventory_stock.reorder_threshold, 0)
-                     THEN 1 ELSE 0 END)                                   AS low_stock,
+                     THEN 1 ELSE 0 END)                                           AS low_stock,
             SUM(CASE WHEN COALESCE(inventory_stock.quantity_available, 0) = 0
-                     THEN 1 ELSE 0 END)                                   AS out_of_stock,
-            COALESCE(SUM(COALESCE(inventory_stock.quantity_available, 0)), 0) AS total_stock_units,
+                     THEN 1 ELSE 0 END)                                           AS out_of_stock,
+            COALESCE(SUM(COALESCE(inventory_stock.quantity_available, 0)), 0)     AS total_stock_units,
             ROUND(COALESCE(SUM(COALESCE(inventory_stock.quantity_available, 0)
-                          * products.unit_price), 0), 2)                  AS total_inventory_value
+                          * products.unit_price), 0), 2)                          AS total_inventory_value
         FROM products
         LEFT JOIN inventory_stock ON inventory_stock.product_id = products.id
         WHERE products.org_id = :org_id
@@ -335,7 +340,6 @@ async def delete_product(org_id: int, product_id: int) -> bool:
     query = "DELETE FROM products WHERE id = :id AND org_id = :org_id"
     result = await database.execute(query, {"id": product_id, "org_id": org_id})
     return bool(result)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Inventory Stock
@@ -430,8 +434,6 @@ async def adjust_stock(
     if not row:
         return None
     return await get_stock_for_product(org_id, product_id)
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Suppliers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -511,12 +513,13 @@ async def list_suppliers(
 
 
 async def get_supplier_stats(org_id: int) -> dict[str, Any]:
+    # تم تعديل شروط الـ is_active لتتوافق مع Boolean (TRUE / FALSE) بدلاً من (1 / 0)
     query = """
         SELECT
-            COUNT(*)                                                 AS total,
-            SUM(CASE WHEN suppliers.is_active = 1 THEN 1 ELSE 0 END) AS active,
-            SUM(CASE WHEN suppliers.is_active = 0 THEN 1 ELSE 0 END) AS inactive,
-            COUNT(DISTINCT supplier_products.product_id)             AS with_products
+            COUNT(*)                                                             AS total,
+            SUM(CASE WHEN suppliers.is_active = TRUE THEN 1 ELSE 0 END)          AS active,
+            SUM(CASE WHEN suppliers.is_active = FALSE THEN 1 ELSE 0 END)         AS inactive,
+            COUNT(DISTINCT supplier_products.product_id)                         AS with_products
         FROM suppliers
         LEFT JOIN supplier_products ON supplier_products.supplier_id = suppliers.id
         WHERE suppliers.org_id = :org_id
@@ -677,12 +680,11 @@ async def supplier_has_orders(org_id: int, supplier_id: int) -> bool:
     """
     row = await database.fetch_one(query, {"supplier_id": supplier_id, "org_id": org_id})
     return row is not None
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Purchase Orders
 # ─────────────────────────────────────────────────────────────────────────────
 
+# تعديل الاستعلام الأساسي ليكون جاهزاً للـ GROUP BY بشكل سليم
 _PO_SELECT = """
     SELECT
         purchase_orders.id,
@@ -772,9 +774,22 @@ async def create_purchase_order(
 
 
 async def get_purchase_order(org_id: int, order_id: int) -> dict[str, Any] | None:
+    # إضافة suppliers.name و purchase_orders.* إلى الـ GROUP BY لمنع خطأ الـ GroupingError
     query = _PO_SELECT + """
         WHERE purchase_orders.id = :id AND purchase_orders.org_id = :org_id
-        GROUP BY purchase_orders.id
+        GROUP BY 
+            purchase_orders.id,
+            purchase_orders.org_id,
+            purchase_orders.supplier_id,
+            purchase_orders.created_by,
+            purchase_orders.status,
+            purchase_orders.total_amount,
+            purchase_orders.notes,
+            purchase_orders.ordered_at,
+            purchase_orders.received_at,
+            purchase_orders.created_at,
+            purchase_orders.updated_at,
+            suppliers.name
     """
     row = await database.fetch_one(query, {"id": order_id, "org_id": org_id})
     if not row:
@@ -819,10 +834,24 @@ async def list_purchase_orders(
     order_dir = "DESC" if sort_order.lower() == "desc" else "ASC"
 
     offset = (page - 1) * page_size
+    
+    # تطبيق قواعد الـ GROUP BY الصارمة لـ Postgres هنا أيضاً
     data_query = f"""
         {_PO_SELECT}
         WHERE {where}
-        GROUP BY purchase_orders.id
+        GROUP BY 
+            purchase_orders.id,
+            purchase_orders.org_id,
+            purchase_orders.supplier_id,
+            purchase_orders.created_by,
+            purchase_orders.status,
+            purchase_orders.total_amount,
+            purchase_orders.notes,
+            purchase_orders.ordered_at,
+            purchase_orders.received_at,
+            purchase_orders.created_at,
+            purchase_orders.updated_at,
+            suppliers.name
         ORDER BY purchase_orders.{sort_by} {order_dir}, purchase_orders.id
         LIMIT :limit OFFSET :offset
     """
@@ -835,14 +864,14 @@ async def list_purchase_orders(
 async def get_po_stats(org_id: int) -> dict[str, Any]:
     query = """
         SELECT
-            COUNT(*)                                                          AS total,
-            SUM(CASE WHEN status = 'draft'             THEN 1 ELSE 0 END)     AS draft,
-            SUM(CASE WHEN status = 'ordered'           THEN 1 ELSE 0 END)     AS ordered,
-            SUM(CASE WHEN status = 'partially_received' THEN 1 ELSE 0 END)    AS partially_received,
-            SUM(CASE WHEN status = 'received'          THEN 1 ELSE 0 END)     AS received,
-            SUM(CASE WHEN status = 'cancelled'         THEN 1 ELSE 0 END)     AS cancelled,
+            COUNT(*)                                                                          AS total,
+            SUM(CASE WHEN status = 'draft'             THEN 1 ELSE 0 END)                     AS draft,
+            SUM(CASE WHEN status = 'ordered'           THEN 1 ELSE 0 END)                     AS ordered,
+            SUM(CASE WHEN status = 'partially_received' THEN 1 ELSE 0 END)                    AS partially_received,
+            SUM(CASE WHEN status = 'received'          THEN 1 ELSE 0 END)                     AS received,
+            SUM(CASE WHEN status = 'cancelled'         THEN 1 ELSE 0 END)                     AS cancelled,
             COALESCE(SUM(CASE WHEN status IN ('draft','ordered','partially_received')
-                              THEN total_amount ELSE 0 END), 0)                AS open_value
+                              THEN total_amount ELSE 0 END), 0)                               AS open_value
         FROM purchase_orders
         WHERE org_id = :org_id
     """

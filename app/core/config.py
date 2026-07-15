@@ -10,39 +10,40 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     """Central configuration object — one instance shared application-wide."""
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
-
-    # ── Application ──────────────────────────────────────────────────────────
+    # ── Application ──────────────────────────
     APP_ENV: str
     APP_NAME: str = "ERP System"
     APP_VERSION: str
-    DEBUG: bool
+    APP_DEBUG: bool
 
-    # ── Database ─────────────────────────────────────────────────────────────
+    @property
+    def DEBUG(self) -> bool:
+        return self.APP_DEBUG
+
+    # ── Database ─────────────────────────────
     DATABASE_URL: str
     SYNC_DATABASE_URL: str
 
-    # ── Security / JWT ────────────────────────────────────────────────────────
+    # ── Security / JWT ────────────────────────
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # ── CORS ──────────────────────────────────────────────────────────────────
+    # ── CORS ──────────────────
     ALLOWED_ORIGINS: List[str]
 
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────
     @property
     def is_production(self) -> bool:
         return self.APP_ENV.lower() == "production"
 
-settings = Settings()
 
-print(settings.DEBUG)
+settings = Settings()

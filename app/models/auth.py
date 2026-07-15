@@ -1,7 +1,7 @@
 import re
 from pydantic import BaseModel, ConfigDict, EmailStr, SecretStr, field_validator, Field, model_validator
-from typing import Annotated, Literal
-from datetime import datetime
+from typing import Annotated, Literal, Optional
+from datetime import date, datetime
 from app.utils.phone import mobile_registry
 from email_validator import validate_email, EmailUndeliverableError, EmailNotValidError
 
@@ -63,25 +63,47 @@ class UserRegisterRequest(BaseModel):
         return self
 
 
+# class UserResponse(BaseModel):
+#     """Response model for a user account."""
+#     model_config = ConfigDict(from_attributes=True)
+
+#     id: int
+#     org_id: int | None = None
+#     role: RoleLiteral | None = None
+#     department: DepartmentLiteral | None = None
+
+#     username: str = Field(max_length=20)
+#     email: EmailStr
+#     phone: str = Field(max_length=30)
+#     first_name: str | None = Field(default=None, max_length=80)
+#     last_name: str | None = Field(default=None, max_length=80)
+
+#     is_active: bool = True
+#     last_login: Optional[date] = None
+#     created_at: datetime
+#     updated_at: datetime
+
+from pydantic import BaseModel, EmailStr
+from datetime import datetime, date
+from typing import Optional
+
 class UserResponse(BaseModel):
-    """Response model for a user account."""
-    model_config = ConfigDict(from_attributes=True)
-
     id: int
-    org_id: int | None = None
-    role: RoleLiteral | None = None
-    department: DepartmentLiteral | None = None
-
-    username: str = Field(max_length=20)
+    org_id: Optional[int] = None
+    role: Optional[str] = None
+    department: Optional[str] = None
+    username: str
     email: EmailStr
-    phone: str = Field(max_length=30)
-    first_name: str | None = Field(default=None, max_length=80)
-    last_name: str | None = Field(default=None, max_length=80)
+    phone: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    is_active: bool
+    created_at: datetime                     # 👈 متطابق مع TIMESTAMP WITH TIME ZONE
+    updated_at: datetime                     # 👈 متطابق مع TIMESTAMP WITH TIME ZONE
+    last_login: Optional[date] = None        # 👈 متطابق مع DATE (تاريخ فقط بدون وقت)
 
-    is_active: bool = True
-    last_login: datetime | None = None
-    created_at: datetime
-    updated_at: datetime
+    class Config:
+        from_attributes = True  # للتوافق مع SQLAlchemy في Pydantic v2
 
 
 class Token(BaseModel):
