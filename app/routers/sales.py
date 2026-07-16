@@ -695,8 +695,9 @@ async def list_returns(
     if status:
         conditions.append(returns_table.c.status == status)
 
-    subq = returns_table.select().with_only_columns(returns_table.c.id).where(*conditions).subquery()
-    total = await database.fetch_val(select(func.count()).select_from(subq)) or 0
+    total = await database.fetch_val(
+        select(func.count()).select_from(returns_table).where(*conditions)
+    ) or 0
 
     offset = (page - 1) * page_size
     query = (
