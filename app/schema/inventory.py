@@ -48,12 +48,7 @@ products = sa.Table(
     sa.Column("description", sa.Text,          nullable=True),
     sa.Column("unit_price",  sa.Numeric(12, 2), nullable=False),
     sa.Column("cost_price",  sa.Numeric(12, 2), nullable=False),
-    sa.Column("image_url",   sa.String(500),   nullable=True),
-    sa.Column("is_active",   sa.Boolean,       nullable=False, server_default=sa.text("1")),
-    sa.Column("created_at",  sa.DateTime(timezone=True), nullable=False,
-              server_default=sa.func.now()),
-    sa.Column("updated_at",  sa.DateTime(timezone=True), nullable=False,
-              server_default=sa.func.now(), onupdate=sa.func.now()),
+    sa.Column("is_active",  sa.Boolean,      nullable=False, server_default=sa.text("true")),
     sa.UniqueConstraint("org_id", "sku", name="uq_products_org_id_sku"),
     sa.CheckConstraint("unit_price >= 0", name="ck_products_unit_price_non_negative"),
     sa.CheckConstraint("cost_price >= 0", name="ck_products_cost_price_non_negative"),
@@ -96,12 +91,8 @@ suppliers = sa.Table(
     sa.Column("phone",         sa.String(20),  nullable=True),
     sa.Column("address",       sa.Text,        nullable=True),
     # e.g. "Net 30", "Net 60", "COD"
-    sa.Column("payment_terms", sa.String(100), nullable=True),
-    sa.Column("is_active",     sa.Boolean,     nullable=False, server_default=sa.text("1")),
-    sa.Column("created_at",    sa.DateTime(timezone=True), nullable=False,
-              server_default=sa.func.now()),
-    sa.Column("updated_at",    sa.DateTime(timezone=True), nullable=False,
-              server_default=sa.func.now(), onupdate=sa.func.now()),
+    sa.Column("is_active",    sa.Boolean,      nullable=False, server_default=sa.text("true")),
+    sa.Column("updated_at",    sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()),
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,7 +109,7 @@ supplier_products = sa.Table(
     sa.Column("supplier_sku",   sa.String(50),     nullable=True),
     sa.Column("supplier_price", sa.Numeric(12, 2), nullable=True),
     sa.Column("lead_time_days", sa.Integer,        nullable=True),
-    sa.Column("is_preferred",   sa.Boolean,        nullable=False, server_default=sa.text("0")),
+sa.Column("is_preferred",   sa.Boolean,        nullable=False, server_default=sa.text("false"))
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -170,3 +161,8 @@ purchase_order_items = sa.Table(
     sa.CheckConstraint("quantity_received >= 0", name="ck_po_items_quantity_received_non_negative"),
     sa.CheckConstraint("unit_cost >= 0",         name="ck_po_items_unit_cost_non_negative"),
 )
+
+
+
+
+

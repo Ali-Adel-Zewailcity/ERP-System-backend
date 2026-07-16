@@ -91,7 +91,7 @@ from app.utils.inventory import (
     set_po_status,
     increment_stock,
 )
-from app.utils.activity_log import log_activity
+# from app.utils.activity_log import log_activity
 from app.schema.inventory import products as products_table
 
 
@@ -121,8 +121,8 @@ async def create_category_endpoint(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                             detail="A category with this name already exists.")
     row = await create_category(current_user.org_id, req.name, req.description)
-    await log_activity(current_user.org_id, current_user.id, "created",
-                       "product_category", row["id"], new_value={"name": req.name})
+    # await log_activity(current_user.org_id, current_user.id, "created",
+    #                    "product_category", row["id"], new_value={"name": req.name})
     return CategoryResponse.model_validate(row)
 
 
@@ -184,8 +184,8 @@ async def update_category_endpoint(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT,
                                 detail="A category with this name already exists.")
     row = await update_category(current_user.org_id, category_id, values)
-    await log_activity(current_user.org_id, current_user.id, "updated",
-                       "product_category", category_id, new_value=values)
+    # await log_activity(current_user.org_id, current_user.id, "updated",
+    #                    "product_category", category_id, new_value=values)
     return CategoryResponse.model_validate(row)
 
 
@@ -203,8 +203,8 @@ async def delete_category_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Category not found.")
     await delete_category(current_user.org_id, category_id)
-    await log_activity(current_user.org_id, current_user.id, "deleted",
-                       "product_category", category_id, old_value={"name": existing["name"]})
+    # await log_activity(current_user.org_id, current_user.id, "deleted",
+    #                    "product_category", category_id, old_value={"name": existing["name"]})
     return {"message": "Category deleted successfully."}
 
 
@@ -246,8 +246,8 @@ async def create_product_endpoint(
         image_url=req.image_url,
         is_active=req.is_active,
     )
-    await log_activity(current_user.org_id, current_user.id, "created",
-                       "product", row["id"], new_value={"sku": req.sku, "name": req.name})
+    # await log_activity(current_user.org_id, current_user.id, "created",
+    #                    "product", row["id"], new_value={"sku": req.sku, "name": req.name})
     return ProductResponse.model_validate(row)
 
 
@@ -355,9 +355,9 @@ async def update_product_endpoint(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                                 detail="Category not found.")
     row = await update_product(current_user.org_id, product_id, values)
-    await log_activity(current_user.org_id, current_user.id, "updated",
-                       "product", product_id, old_value={"sku": existing["sku"]},
-                       new_value=values)
+    # await log_activity(current_user.org_id, current_user.id, "updated",
+    #                    "product", product_id, old_value={"sku": existing["sku"]},
+    #                    new_value=values)
     return ProductResponse.model_validate(row)
 
 
@@ -375,8 +375,8 @@ async def delete_product_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Product not found.")
     await delete_product(current_user.org_id, product_id)
-    await log_activity(current_user.org_id, current_user.id, "deleted",
-                       "product", product_id, old_value={"sku": existing["sku"]})
+    # await log_activity(current_user.org_id, current_user.id, "deleted",
+    #                    "product", product_id, old_value={"sku": existing["sku"]})
     return {"message": "Product deleted successfully."}
 
 
@@ -487,11 +487,10 @@ async def adjust_stock_endpoint(
         params,
     )
     row = await get_stock_for_product(current_user.org_id, product_id)
-    await log_activity(current_user.org_id, current_user.id, "stock_adjusted",
-                       "inventory_stock", product_id,
-                       new_value={"reason": req.reason, "changes": sets})
+    # await log_activity(current_user.org_id, current_user.id, "stock_adjusted",
+    #                    "inventory_stock", product_id,
+    #                    new_value={"reason": req.reason, "changes": sets})
     return StockResponse.model_validate(row)
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Suppliers
@@ -518,8 +517,6 @@ async def create_supplier_endpoint(
         payment_terms=req.payment_terms,
         is_active=req.is_active,
     )
-    await log_activity(current_user.org_id, current_user.id, "created",
-                       "supplier", row["id"], new_value={"name": req.name})
     return SupplierResponse.model_validate(row)
 
 
@@ -592,8 +589,6 @@ async def update_supplier_endpoint(
     if not values:
         return SupplierResponse.model_validate(existing)
     row = await update_supplier(current_user.org_id, supplier_id, values)
-    await log_activity(current_user.org_id, current_user.id, "updated",
-                       "supplier", supplier_id, new_value=values)
     return SupplierResponse.model_validate(row)
 
 
@@ -615,8 +610,6 @@ async def delete_supplier_endpoint(
             status_code=status.HTTP_409_CONFLICT,
             detail="Cannot delete a supplier with existing purchase orders.")
     await delete_supplier(current_user.org_id, supplier_id)
-    await log_activity(current_user.org_id, current_user.id, "deleted",
-                       "supplier", supplier_id, old_value={"name": existing["name"]})
     return {"message": "Supplier deleted successfully."}
 
 
@@ -666,9 +659,6 @@ async def add_supplier_product_endpoint(
         supplier_id, req.product_id, req.supplier_sku,
         req.supplier_price, req.lead_time_days, req.is_preferred,
     )
-    await log_activity(current_user.org_id, current_user.id, "created",
-                       "supplier_product", supplier_id,
-                       new_value={"product_id": req.product_id})
     return SupplierProductResponse.model_validate(row)
 
 
@@ -689,6 +679,11 @@ async def update_supplier_product_endpoint(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail="Supplier product mapping not found.")
     values = {k: v for k, v in req.model_dump(exclude_unset=True).items()}
+    
+    # تأمين الدالة: إذا لم تكن هناك قيم للتحديث، أرجع السجل الحالي مباشرة دون استعلام قاعدة البيانات
+    if not values:
+        return SupplierProductResponse.model_validate(existing)
+        
     row = await update_supplier_product(supplier_id, product_id, values)
     return SupplierProductResponse.model_validate(row)
 
@@ -709,7 +704,6 @@ async def remove_supplier_product_endpoint(
                             detail="Supplier product mapping not found.")
     await remove_supplier_product(supplier_id, product_id)
     return {"message": "Supplier product removed successfully."}
-
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Purchase Orders
@@ -748,9 +742,9 @@ async def create_po_endpoint(
         notes=req.notes,
         items=[i.model_dump() for i in req.items],
     )
-    await log_activity(current_user.org_id, current_user.id, "created",
-                       "purchase_order", po["id"],
-                       new_value={"supplier_id": req.supplier_id})
+    # await log_activity(current_user.org_id, current_user.id, "created",
+    #                    "purchase_order", po["id"],
+    #                    new_value={"supplier_id": req.supplier_id})
     return PurchaseOrderResponse.model_validate(po)
 
 
@@ -865,8 +859,8 @@ async def delete_po_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail="Only draft purchase orders can be deleted.")
     await delete_purchase_order(current_user.org_id, order_id)
-    await log_activity(current_user.org_id, current_user.id, "deleted",
-                       "purchase_order", order_id)
+    # await log_activity(current_user.org_id, current_user.id, "deleted",
+    #                    "purchase_order", order_id)
     return {"message": "Purchase order deleted successfully."}
 
 
@@ -974,8 +968,8 @@ async def submit_po_endpoint(
     await set_po_status(order_id, "ordered",
                         ordered_at=datetime.now(timezone.utc))
     row = await get_purchase_order(current_user.org_id, order_id)
-    await log_activity(current_user.org_id, current_user.id, "submitted",
-                       "purchase_order", order_id)
+    # await log_activity(current_user.org_id, current_user.id, "submitted",
+    #                    "purchase_order", order_id)
     return PurchaseOrderResponse.model_validate(row)
 
 
@@ -1048,9 +1042,9 @@ async def receive_po_endpoint(
         await set_po_status(order_id, new_status, received_at=received_at)
 
     row = await get_purchase_order(current_user.org_id, order_id)
-    await log_activity(current_user.org_id, current_user.id, "received",
-                       "purchase_order", order_id,
-                       new_value={"items": len(receive_map)})
+    # await log_activity(current_user.org_id, current_user.id, "received",
+    #                    "purchase_order", order_id,
+    #                    new_value={"items": len(receive_map)})
     return PurchaseOrderResponse.model_validate(row)
 
 
@@ -1073,6 +1067,6 @@ async def cancel_po_endpoint(
                             detail=f"Cannot cancel an order in '{po['status']}' state.")
     await set_po_status(order_id, "cancelled")
     row = await get_purchase_order(current_user.org_id, order_id)
-    await log_activity(current_user.org_id, current_user.id, "cancelled",
-                       "purchase_order", order_id)
+    # await log_activity(current_user.org_id, current_user.id, "cancelled",
+    #                    "purchase_order", order_id)
     return PurchaseOrderResponse.model_validate(row)

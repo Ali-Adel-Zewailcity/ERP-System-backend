@@ -13,7 +13,7 @@ Permissions are determined by the user's `role` and optionally `department` colu
 on the `users` table — no external permission catalog needed.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.auth import RoleLiteral, DepartmentLiteral
@@ -46,8 +46,10 @@ class UserPermissionsResponse(BaseModel):
 
     user_id: Annotated[int, Field(description="Logged-in user ID.")]
     org_id: Annotated[int | None, Field(description="Organization ID.")] = None
-    role: Annotated[RoleLiteral | None, Field(description="User's fixed role name.")] = None
-    department: Annotated[DepartmentLiteral | None, Field(description="User's department (for managers and employees).")] = None
+    # role: Annotated[RoleLiteral | None, Field(description="User's fixed role name.")] = None
+    role: Optional[str] = None          # 👈 لازم تكون Optional عشان تقبل الـ NULL
+    department: Optional[str] = None    # 👈 لازم تكون Optional عشان تقبل الـ NULL
+    # department: Annotated[DepartmentLiteral | None, Field(description="User's department (for managers and employees).")] = None
     permissions: Annotated[dict[str, bool], Field(
         default_factory=dict,
         description="Map of resource table names to access grant (True = has access)."

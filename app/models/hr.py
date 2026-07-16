@@ -84,10 +84,11 @@ class EmployeeUpdate(BaseModel):
 
 
 class EmployeeResponse(BaseModel):
-    """Response model representing an employee record."""
+    # ""Response model representing an employee record.""
 
     model_config = ConfigDict(
         from_attributes=True,
+        extra="ignore",
         json_schema_extra={
             "example": {
                 "id": 1,
@@ -103,7 +104,7 @@ class EmployeeResponse(BaseModel):
                 "status": "active",
                 "created_at": "2026-01-01T00:00:00Z",
                 "updated_at": "2026-01-01T00:00:00Z",
-            }
+            },
         },
     )
 
@@ -275,24 +276,25 @@ class AttendanceResponse(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,
+        extra="ignore",
         json_schema_extra={
             "example": {
                 "id": 1,
                 "employee_id": 1,
                 "employee_name": "Ali Hassan",
                 "department": "Engineering",
-                "org_id": 1,
-                "attendance_date": "2026-07-08",
+                "employee_number": "EMP-001",
+                "attendance_date": "2026-07-01",
                 "check_in_time": "09:00:00",
-                "check_out_time": "18:00:00",
+                "check_out_time": "17:00",
                 "status": "present",
-                "notes": "On time",
-                "created_at": "2026-07-08T00:00:00Z",
-                "updated_at": "2026-07-08T00:00:00Z",
+                "source": "manual",
+                "notes": None,
+                "created_at": "2026-07-01T00:00Z",
+                "updated_at": "2026-07-01T00:00:00Z",
             }
         },
     )
-
     id: int
     employee_id: int
     employee_name: str | None = None
@@ -398,21 +400,22 @@ class LeaveResponse(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,
+        extra="ignore",
         json_schema_extra={
             "example": {
                 "id": 1,
                 "employee_id": 1,
                 "employee_name": "Ali Hassan",
+                "employee_number": "EMP-001",
                 "department": "Engineering",
-                "approved_by": None,
-                "approver_name": None,
+                "approver_name": "Manager Name",
                 "leave_type": "annual",
-                "start_date": "2026-08-01",
-                "end_date": "2026-08-05",
-                "total_days": 5,
+                "start_date": "2026-07-10",
+                "end_date": "2026-07-12",
+                "total_days": 3,
                 "reason": "Family vacation",
                 "status": "pending",
-                "requested_at": "2026-07-09T00:00:00Z",
+                "requested_at": "2026-07-01T00:00Z",
                 "resolved_at": None,
             }
         },
@@ -498,6 +501,7 @@ class PayrollResponse(BaseModel):
 
     model_config = ConfigDict(
         from_attributes=True,
+        extra="ignore",
         json_schema_extra={
             "example": {
                 "id": 1,
@@ -518,9 +522,9 @@ class PayrollResponse(BaseModel):
                 "basic_salary": Decimal("50000.00"),
                 "status": "pending",
                 "notes": None,
-                "generated_at": "2026-07-09T00:00:00Z",
+                "generated_at": "2026-07-09T00:00Z",
                 "created_at": "2026-07-09T00:00:00Z",
-                "updated_at": "2026-07-09T00:00:00Z",
+                "updated_at": "2026-07-09T00:00Z",
             }
         },
     )

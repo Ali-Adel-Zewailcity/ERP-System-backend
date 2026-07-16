@@ -29,12 +29,12 @@ customers = sa.Table(
     # Maximum outstanding balance allowed for this customer.
     sa.Column("credit_limit", sa.Numeric(14, 2), nullable=False, server_default=sa.text("0")),
     sa.Column("notes",        sa.Text,           nullable=True),
-    sa.Column("is_active",    sa.Boolean,        nullable=False, server_default=sa.text("1")),
     sa.Column("created_at",   sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
     sa.Column("updated_at",   sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now(), onupdate=sa.func.now()),
     sa.CheckConstraint("credit_limit >= 0", name="ck_customers_credit_limit_non_negative"),
+    sa.Column("is_active", sa.Boolean, nullable=False, server_default=sa.text("true"))
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -145,3 +145,4 @@ return_items = sa.Table(
         name="ck_return_items_refund_method",
     ),
 )
+

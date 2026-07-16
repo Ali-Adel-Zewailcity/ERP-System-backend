@@ -41,7 +41,7 @@ organizations = sa.Table(
               nullable=False, index=True),
     sa.Column("phone",        sa.String(30),   nullable=False),
     sa.Column("address",      sa.Text,         nullable=True),
-    sa.Column("is_active",    sa.Boolean,      nullable=False, server_default=sa.text("1")),
+    sa.Column("is_active",    sa.Boolean,      nullable=False, server_default=sa.text("true")),
     sa.Column("created_at",   sa.DateTime(timezone=True), nullable=False,
               server_default=sa.func.now()),
     sa.Column("updated_at",   sa.DateTime(timezone=True), nullable=False,
@@ -55,11 +55,8 @@ users = sa.Table(
     "users",
     metadata,
     sa.Column("id",            sa.Integer,    primary_key=True, autoincrement=True),
-    sa.Column("org_id",        sa.Integer,    sa.ForeignKey("organizations.id", ondelete="CASCADE"),
-              nullable=True, index=True),
-    # Fixed role — one of VALID_ROLES or NULL (no role assigned yet)
+    sa.Column("org_id",        sa.Integer,    nullable=True),
     sa.Column("role",          sa.String(30), nullable=True),
-    # Department — required for hr_manager / inventory_manager / sales_manager / employee
     sa.Column("department",    sa.String(20), nullable=True),
     sa.Column("username",      sa.String(20), nullable=False, unique=True),
     sa.Column("email",         sa.String(255), nullable=False, unique=True),
@@ -67,20 +64,10 @@ users = sa.Table(
     sa.Column("password_hash", sa.String(255), nullable=False),
     sa.Column("first_name",    sa.String(80), nullable=True),
     sa.Column("last_name",     sa.String(80), nullable=True),
-    sa.Column("is_active",     sa.Boolean,    nullable=False, server_default=sa.text("1")),
-    sa.Column("last_login",    sa.DateTime(timezone=True), nullable=True),
-    sa.Column("created_at",    sa.DateTime(timezone=True), nullable=False,
-              server_default=sa.func.now()),
-    sa.Column("updated_at",    sa.DateTime(timezone=True), nullable=False,
-              server_default=sa.func.now(), onupdate=sa.func.now()),
-    sa.CheckConstraint(
-        "role IS NULL OR role IN ('owner', 'admin', 'hr_manager', 'inventory_manager', 'sales_manager', 'employee')",
-        name="ck_users_valid_role",
-    ),
-    sa.CheckConstraint(
-        "department IS NULL OR department IN ('hr', 'inventory', 'sales')",
-        name="ck_users_valid_department",
-    ),
+    sa.Column("is_active",     sa.Boolean,    nullable=False, server_default=sa.text("true")),
+    sa.Column("created_at",    sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+    sa.Column("updated_at",    sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now(), onupdate=sa.func.now()),
+    sa.Column("last_login",    sa.Date,       nullable=True, server_default=sa.func.now()),
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,3 +96,4 @@ activity_logs = sa.Table(
         name="ck_activity_logs_valid_module",
     ),
 )
+
